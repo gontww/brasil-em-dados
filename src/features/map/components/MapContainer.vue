@@ -71,10 +71,13 @@ onMounted(() => {
 
 // Adiciona as fontes e camadas base de estados
 const setupStatesLayers = (map: mapboxgl.Map, geojsonData: FeatureCollection) => {
+  geojsonData.features.forEach((feat) => {
+    feat.id = Number(feat.properties?.codigo_ibg || feat.properties?.id)
+  })
+
   map.addSource('brazil-states', {
     type: 'geojson',
     data: geojsonData,
-    generateId: true,
   })
 
   // Preenchimento dos estados (2D)
@@ -221,6 +224,11 @@ const setupMunicipiosEvents = (map: mapboxgl.Map) => {
 // Garante que a fonte de municípios exista no mapa
 const ensureMunicipiosSource = (map: mapboxgl.Map, geojsonData: FeatureCollection) => {
   const source = map.getSource('municipios-source') as mapboxgl.GeoJSONSource
+
+  geojsonData.features.forEach((feat) => {
+    feat.id = Number(feat.properties?.codigo_ibg || feat.properties?.id)
+  })
+
   municipioGeoJson.value = geojsonData
 
   if (source) {
@@ -229,7 +237,6 @@ const ensureMunicipiosSource = (map: mapboxgl.Map, geojsonData: FeatureCollectio
     map.addSource('municipios-source', {
       type: 'geojson',
       data: geojsonData,
-      generateId: true,
     })
 
     // Preenchimento dos municípios
@@ -344,10 +351,10 @@ const applyThematicStyling = (
     lastAppliedIndicator.value[sourceId] !== indicator ||
     lastAppliedGeoJsonRef.value[sourceId] !== geojsonData
   ) {
-    geojsonData.features.forEach((feat, index) => {
+    geojsonData.features.forEach((feat) => {
       const code = feat.properties?.codigo_ibg || feat.properties?.id
       const val = indicatorData[code] || 0
-      map.setFeatureState({ source: sourceId, id: index }, { value: val })
+      map.setFeatureState({ source: sourceId, id: Number(code) }, { value: val })
     })
     lastAppliedIndicator.value[sourceId] = indicator
     lastAppliedGeoJsonRef.value[sourceId] = geojsonData
