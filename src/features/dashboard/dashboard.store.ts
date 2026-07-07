@@ -34,6 +34,11 @@ export const useDashboardStore = defineStore('dashboard', () => {
   }
 
   const setMapLevel = (level: MapLevelMode) => {
+    // Desselecionar município ao voltar para o nível de estados
+    if (level === 'estados' && selectedMunicipio.value !== null) {
+      selectedMunicipio.value = null
+      sidebarOpen.value = false
+    }
     mapLevel.value = level
   }
 
