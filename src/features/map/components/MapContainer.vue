@@ -557,9 +557,7 @@ watch(
       let geojsonData: FeatureCollection
 
       if (nationalMunicipalitiesGeoJson.value) {
-        // GeoJSON nacional já em memória — garantir que a source do mapa está configurada
         geojsonData = nationalMunicipalitiesGeoJson.value
-        ensureMunicipiosSource(map, geojsonData)
       } else if (loadedEstadoCode.value !== estadoCode) {
         geojsonData = await geojsonService.getMunicipiosByEstado(estadoCode)
         ensureMunicipiosSource(map, geojsonData)
@@ -577,7 +575,7 @@ watch(
         map.setFilter('municipio-highlight', ['==', ['get', 'id'], String(newMunicipio.id)])
       }
 
-      // Navegar suavemente até o município selecionado via fitBounds na sua geometria
+      // Encontrar a feature do município para obter os limites geográficos
       if (geojsonData && geojsonData.features) {
         const feature = geojsonData.features.find(
           (f: Feature) => f.properties?.id === String(newMunicipio.id)
@@ -586,10 +584,9 @@ watch(
         if (feature) {
           const bounds = geojsonService.getFeatureBounds(feature)
           map.fitBounds(bounds, {
-            padding: 120,
+            padding: 100,
             maxZoom: 10,
             duration: 1500,
-            essential: true, // Garante animação mesmo com prefers-reduced-motion
           })
         }
       }
@@ -610,6 +607,9 @@ watch(
   async (newLevel) => {
     if (!mapInstance.value || !isLoaded.value) return
     const map = mapInstance.value
+
+    // Se houver um município selecionado, o comportamento de foco é mantido
+    if (dashboardStore.selectedMunicipio) return
 
     if (newLevel === 'municipios') {
       // Ocultar estados
