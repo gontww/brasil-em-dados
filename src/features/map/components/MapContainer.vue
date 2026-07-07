@@ -21,6 +21,10 @@ const stateGeoJson = ref<FeatureCollection | null>(null)
 const municipioGeoJson = ref<FeatureCollection | null>(null)
 const nationalMunicipalitiesGeoJson = ref<FeatureCollection | null>(null)
 
+// Cache para evitar recálculos redundantes e chamadas lentas ao setFeatureState do Mapbox
+const lastAppliedIndicator = ref<Record<string, string>>({})
+const lastAppliedGeoJsonRef = ref<Record<string, unknown>>({})
+
 const loadNationalMunicipalities = async (map: mapboxgl.Map) => {
   if (nationalMunicipalitiesGeoJson.value) {
     ensureMunicipiosSource(map, nationalMunicipalitiesGeoJson.value)
@@ -335,12 +339,19 @@ const applyThematicStyling = (
 
   const palette = colorPalettes[indicator as keyof typeof colorPalettes]
 
-  // 2. Definir valores no Feature State do Mapbox
-  geojsonData.features.forEach((feat, index) => {
-    const code = feat.properties?.codigo_ibg || feat.properties?.id
-    const val = indicatorData[code] || 0
-    map.setFeatureState({ source: sourceId, id: index }, { value: val })
-  })
+  // 2. Definir valores no Feature State do Mapbox (apenas se o indicador ou geojson mudou)
+  if (
+    lastAppliedIndicator.value[sourceId] !== indicator ||
+    lastAppliedGeoJsonRef.value[sourceId] !== geojsonData
+  ) {
+    geojsonData.features.forEach((feat, index) => {
+      const code = feat.properties?.codigo_ibg || feat.properties?.id
+      const val = indicatorData[code] || 0
+      map.setFeatureState({ source: sourceId, id: index }, { value: val })
+    })
+    lastAppliedIndicator.value[sourceId] = indicator
+    lastAppliedGeoJsonRef.value[sourceId] = geojsonData
+  }
 
   // 3. Criar expressão de interpolação cromática
   const colorExpression: mapboxgl.Expression = [
