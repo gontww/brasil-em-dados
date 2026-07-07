@@ -107,7 +107,6 @@ npm run test
 ```bash
 npm run build
 ```
-O build otimizado será gerado no diretório `dist/` pronto para deploy em qualquer servidor estático (Vercel, Netlify, GitHub Pages).
 
 ---
 
