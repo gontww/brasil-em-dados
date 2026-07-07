@@ -32,9 +32,9 @@ const loadNationalMunicipalities = async (map: mapboxgl.Map) => {
   }
   isGeoJsonLoading.value = true
   try {
-    const res = await fetch('/geojson/brazil-municipalities.json')
-    if (!res.ok) throw new Error('Erro ao baixar arquivo nacional de municípios')
-    const geojsonData = await res.json()
+    const geojsonData = await geojsonService.fetchWithCache<FeatureCollection>(
+      '/geojson/brazil-municipalities.json'
+    )
     nationalMunicipalitiesGeoJson.value = geojsonData
     ensureMunicipiosSource(map, geojsonData)
   } catch (err) {
@@ -153,9 +153,10 @@ watch(isLoaded, async (loaded) => {
     const map = mapInstance.value
     map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'bottom-right')
 
-    // Carregar e guardar geojson de estados localmente
-    const res = await fetch('/geojson/brazil-states.json')
-    stateGeoJson.value = await res.json()
+    // Carregar e guardar geojson de estados localmente com cache
+    stateGeoJson.value = await geojsonService.fetchWithCache<FeatureCollection>(
+      '/geojson/brazil-states.json'
+    )
 
     if (stateGeoJson.value) {
       setupStatesLayers(map, stateGeoJson.value)

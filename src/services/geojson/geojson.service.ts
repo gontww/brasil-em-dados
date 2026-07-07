@@ -4,14 +4,37 @@ const BASE_URL = 'https://raw.githubusercontent.com/tbrugz/geodata-br/master/geo
 
 export const geojsonService = {
   /**
+   * Helper para carregar arquivos JSON com cache persistente (Cache API) no navegador
+   */
+  async fetchWithCache<T>(url: string): Promise<T> {
+    try {
+      if (typeof window !== 'undefined' && 'caches' in window) {
+        const cache = await caches.open('brasil-em-dados-geojson-v1')
+        const cachedResponse = await cache.match(url)
+        if (cachedResponse) {
+          return await cachedResponse.json()
+        }
+        const response = await fetch(url)
+        if (response.ok) {
+          await cache.put(url, response.clone())
+          return await response.json()
+        }
+      }
+    } catch (e) {
+      console.warn('Erro ao acessar Cache API, buscando da rede:', e)
+    }
+    const response = await fetch(url)
+    if (!response.ok) {
+      throw new Error(`Erro ao baixar recurso: ${url}`)
+    }
+    return response.json()
+  },
+
+  /**
    * Obtém a malha de municípios de um estado pelo código IBGE do estado (2 dígitos)
    */
   async getMunicipiosByEstado(estadoCode: string): Promise<FeatureCollection> {
-    const response = await fetch(`${BASE_URL}/geojs-${estadoCode}-mun.json`)
-    if (!response.ok) {
-      throw new Error(`Falha ao carregar malha de municípios para o estado ${estadoCode}`)
-    }
-    return response.json()
+    return this.fetchWithCache<FeatureCollection>(`${BASE_URL}/geojs-${estadoCode}-mun.json`)
   },
 
   /**
