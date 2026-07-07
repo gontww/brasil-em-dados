@@ -445,18 +445,26 @@ const applyThematicStyling = (
   }
 }
 
+// Ajusta apenas pitch/bearing sem afetar posição/zoom da câmera
+const applyCameraAngle = (map: mapboxgl.Map) => {
+  const is3D = dashboardStore.viewMode === '3d'
+  if (is3D) {
+    map.easeTo({ pitch: 55, bearing: -15, duration: 800 })
+  } else {
+    map.easeTo({ pitch: 0, bearing: 0, duration: 800 })
+  }
+}
+
 // Atualizar o Mapa quando o Indicador ou Modo de Visualização mudar
-const updateThematicVisualization = async () => {
+const updateThematicVisualization = async (adjustCamera = true) => {
   if (!mapInstance.value || !isLoaded.value) return
   const map = mapInstance.value
   const indicator = dashboardStore.activeIndicator
-  const is3D = dashboardStore.viewMode === '3d'
 
-  // Alternar Câmera entre 2D (plano) e 3D (inclinado)
-  if (is3D) {
-    map.easeTo({ pitch: 55, bearing: -15, duration: 1000 })
-  } else {
-    map.easeTo({ pitch: 0, bearing: 0, duration: 1000 })
+  // Alternar Câmera entre 2D (plano) e 3D (inclinado) — apenas se solicitado
+  // (não ajustar câmera quando chamado pelo watcher de município, pois o fitBounds cuidará disso)
+  if (adjustCamera) {
+    applyCameraAngle(map)
   }
 
   try {
@@ -546,7 +554,7 @@ watch(
 
       map.flyTo({
         center: [-51.9253, -14.235],
-        zoom: 3.8,
+        zoom: 6.1,
         duration: 1500,
       })
 
@@ -555,7 +563,11 @@ watch(
       return
     }
 
-    const estadoCode = String(newMunicipio.id).slice(0, 2)
+    // Garantir que o nível do mapa está em 'municipios' ao selecionar um município
+    if (dashboardStore.mapLevel !== 'municipios') {
+      dashboardStore.setMapLevel('municipios')
+    }
+
     isGeoJsonLoading.value = true
 
     try {
@@ -563,18 +575,10 @@ watch(
       safeSetLayoutProperty(map, 'states-fill', 'visibility', 'none')
       safeSetLayoutProperty(map, 'states-borders', 'visibility', 'none')
 
-      // Carregar GeoJSON do estado correspondente sob demanda se não estiver em cache
-      let geojsonData: FeatureCollection
-
-      if (nationalMunicipalitiesGeoJson.value) {
-        geojsonData = nationalMunicipalitiesGeoJson.value
-      } else if (loadedEstadoCode.value !== estadoCode) {
-        geojsonData = await geojsonService.getMunicipiosByEstado(estadoCode)
-        ensureMunicipiosSource(map, geojsonData)
-        loadedEstadoCode.value = estadoCode
-      } else {
-        geojsonData = municipioGeoJson.value!
-      }
+      // Sempre carregar o GeoJSON nacional completo (loadNationalMunicipalities tem cache interno)
+      // Isso garante que todos os municípios sejam exibidos, independente do nível anterior
+      await loadNationalMunicipalities(map)
+      const geojsonData = nationalMunicipalitiesGeoJson.value!
 
       // Reexibir a camada municipal caso estivesse oculta
       safeSetLayoutProperty(map, 'municipios-fill', 'visibility', 'visible')
@@ -583,24 +587,39 @@ watch(
       // Destacar o município selecionado no mapa
       safeSetFilter(map, 'municipio-highlight', ['==', ['get', 'id'], String(newMunicipio.id)])
 
+      // Atualizar estilos temáticos SEM ajustar câmera
+      // (o fitBounds abaixo cuidará do ângulo e posição da câmera)
+      await updateThematicVisualization(false)
+
       // Encontrar a feature do município para obter os limites geográficos
+      // O GeoJSON pode usar 'id' ou 'codigo_ibg' como identificador
+      const munIdStr = String(newMunicipio.id)
+      const is3D = dashboardStore.viewMode === '3d'
+
       if (geojsonData && geojsonData.features) {
         const feature = geojsonData.features.find(
-          (f: Feature) => f.properties?.id === String(newMunicipio.id)
+          (f: Feature) =>
+            f.properties?.id === munIdStr ||
+            String(f.properties?.codigo_ibg) === munIdStr
         )
 
         if (feature) {
           const bounds = geojsonService.getFeatureBounds(feature)
-          map.fitBounds(bounds, {
-            padding: 100,
-            maxZoom: 10,
-            duration: 1500,
+          // Calcular o centro do município a partir dos bounds
+          const centerLng = (bounds[0][0] + bounds[1][0]) / 2
+          const centerLat = (bounds[0][1] + bounds[1][1]) / 2
+          // easeTo anima linearmente sem o zoom-out intermediário do flyTo
+          map.easeTo({
+            center: [centerLng, centerLat],
+            zoom: 6.1,
+            pitch: is3D ? 55 : 0,
+            bearing: is3D ? -15 : 0,
+            duration: 1200,
           })
+        } else {
+          console.warn(`Feature não encontrada para o município ${newMunicipio.id} (${newMunicipio.nome})`)
         }
       }
-
-      // Atualizar visualização temática municipal se houver um tema ativo
-      updateThematicVisualization()
     } catch (err) {
       console.error('Erro ao focar no município:', err)
     } finally {
@@ -616,8 +635,11 @@ watch(
     if (!mapInstance.value || !isLoaded.value) return
     const map = mapInstance.value
 
-    // Se houver um município selecionado, o comportamento de foco é mantido
-    if (dashboardStore.selectedMunicipio) return
+    // Se voltar para estados e houver município selecionado, desselecionar
+    if (newLevel === 'estados' && dashboardStore.selectedMunicipio) {
+      dashboardStore.selectMunicipio(null)
+      return
+    }
 
     if (newLevel === 'municipios') {
       // Ocultar estados
