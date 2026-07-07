@@ -8,7 +8,7 @@ export function useMapboxMap() {
 
   const initializeMap = (
     container: string | HTMLElement,
-    options: Partial<mapboxgl.MapboxOptions> = {}
+    options: Partial<mapboxgl.MapOptions> = {}
   ) => {
     const token = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN
 
