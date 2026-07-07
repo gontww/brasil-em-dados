@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
-import { useDebounceFn } from '@vueuse/core'
 import mapboxgl from 'mapbox-gl'
 import { useMapboxMap } from '../composables/useMapboxMap'
 import { useDashboardStore, type MapIndicator } from '../../dashboard/dashboard.store'
@@ -25,8 +24,6 @@ const nationalMunicipalitiesGeoJson = ref<FeatureCollection | null>(null)
 // Cache para evitar recálculos redundantes e chamadas lentas ao setFeatureState do Mapbox
 const lastAppliedIndicator = ref<Record<string, string>>({})
 const lastAppliedGeoJsonRef = ref<Record<string, unknown>>({})
-
-const prefetchInitiated = ref(false)
 
 const loadNationalMunicipalities = async (map: mapboxgl.Map) => {
   if (nationalMunicipalitiesGeoJson.value) {
@@ -165,21 +162,10 @@ watch(isLoaded, async (loaded) => {
     }
     setupMunicipiosEvents(map)
 
-    if (!prefetchInitiated.value) {
-      prefetchInitiated.value = true
-      fetch('/geojson/brazil-municipalities.json')
-        .then((r) => r.json())
-        .then((data) => {
-          nationalMunicipalitiesGeoJson.value = data
-        })
-        .catch(() => {
-          // Silencioso: o fetch normal em loadNationalMunicipalities serve como fallback
-        })
-    }
-
     // Se o nível inicial do mapa for municípios, carregar e exibir
     if (dashboardStore.mapLevel === 'municipios') {
-      showLevelMunicipios(map)
+      map.setLayoutProperty('states-fill', 'visibility', 'none')
+      map.setLayoutProperty('states-borders', 'visibility', 'none')
       await loadNationalMunicipalities(map)
       updateThematicVisualization()
     }
@@ -336,8 +322,11 @@ const applyThematicStyling = (
     ])
 
     if (map.getLayer(extrusionLayerId)) {
-      map.setPaintProperty(extrusionLayerId, 'fill-extrusion-opacity', 0)
+      map.setLayoutProperty(extrusionLayerId, 'visibility', 'none')
     }
+
+    // Garantir que a camada 2D fique visível se resetado
+    map.setLayoutProperty(fillLayerId, 'visibility', 'visible')
     return
   }
 
@@ -443,53 +432,8 @@ const applyThematicStyling = (
   }
 }
 
-const showLevelEstados = (map: mapboxgl.Map) => {
-  if (map.getLayer('states-fill')) {
-    map.setPaintProperty('states-fill', 'fill-opacity', [
-      'case',
-      ['boolean', ['feature-state', 'hover'], false],
-      0.2,
-      0.05,
-    ])
-  }
-  if (map.getLayer('states-borders')) {
-    map.setPaintProperty('states-borders', 'line-opacity', 0.4)
-  }
-  if (map.getLayer('municipios-fill')) {
-    map.setPaintProperty('municipios-fill', 'fill-opacity', 0)
-  }
-  if (map.getLayer('municipios-borders')) {
-    map.setPaintProperty('municipios-borders', 'line-opacity', 0)
-  }
-  if (map.getLayer('municipios-extrusion')) {
-    map.setPaintProperty('municipios-extrusion', 'fill-extrusion-opacity', 0)
-  }
-}
-
-const showLevelMunicipios = (map: mapboxgl.Map) => {
-  if (map.getLayer('states-fill')) {
-    map.setPaintProperty('states-fill', 'fill-opacity', 0)
-  }
-  if (map.getLayer('states-borders')) {
-    map.setPaintProperty('states-borders', 'line-opacity', 0)
-  }
-  if (map.getLayer('states-extrusion')) {
-    map.setPaintProperty('states-extrusion', 'fill-extrusion-opacity', 0)
-  }
-  if (map.getLayer('municipios-fill')) {
-    map.setPaintProperty('municipios-fill', 'fill-opacity', [
-      'case',
-      ['boolean', ['feature-state', 'hover'], false],
-      0.15,
-      0.0,
-    ])
-  }
-  if (map.getLayer('municipios-borders')) {
-    map.setPaintProperty('municipios-borders', 'line-opacity', 0.4)
-  }
-}
-
-const _updateThematicVisualizationImpl = async () => {
+// Atualizar o Mapa quando o Indicador ou Modo de Visualização mudar
+const updateThematicVisualization = async () => {
   if (!mapInstance.value || !isLoaded.value) return
   const map = mapInstance.value
   const indicator = dashboardStore.activeIndicator
@@ -548,8 +492,6 @@ const _updateThematicVisualizationImpl = async () => {
   }
 }
 
-const updateThematicVisualization = useDebounceFn(_updateThematicVisualizationImpl, 300)
-
 watch(() => [dashboardStore.activeIndicator, dashboardStore.viewMode], updateThematicVisualization)
 
 // Sincronizar store do Pinia com a câmera do mapa e destaques
@@ -572,9 +514,22 @@ watch(
       if (dashboardStore.mapLevel === 'municipios') {
         // Se o nível do mapa for municípios, garantir que os municípios nacionais estão carregados e exibidos
         await loadNationalMunicipalities(map)
-        showLevelMunicipios(map)
+        map.setLayoutProperty('municipios-fill', 'visibility', 'visible')
+        map.setLayoutProperty('municipios-borders', 'visibility', 'visible')
+
+        map.setLayoutProperty('states-fill', 'visibility', 'none')
+        map.setLayoutProperty('states-borders', 'visibility', 'none')
       } else {
-        showLevelEstados(map)
+        // Se voltar para o nível de estados, ocultar municípios e exibir estados
+        if (map.getLayer('municipios-fill')) {
+          map.setLayoutProperty('municipios-fill', 'visibility', 'none')
+          map.setLayoutProperty('municipios-borders', 'visibility', 'none')
+          if (map.getLayer('municipios-extrusion')) {
+            map.setLayoutProperty('municipios-extrusion', 'visibility', 'none')
+          }
+        }
+        map.setLayoutProperty('states-fill', 'visibility', 'visible')
+        map.setLayoutProperty('states-borders', 'visibility', 'visible')
       }
 
       map.flyTo({
@@ -592,7 +547,11 @@ watch(
     isGeoJsonLoading.value = true
 
     try {
-      showLevelMunicipios(map)
+      // Ocultar preenchimento dos estados para focar nos municípios
+      map.setLayoutProperty('states-fill', 'visibility', 'none')
+      if (map.getLayer('states-borders')) {
+        map.setLayoutProperty('states-borders', 'visibility', 'none')
+      }
 
       // Carregar GeoJSON do estado correspondente sob demanda se não estiver em cache
       let geojsonData: FeatureCollection
@@ -606,6 +565,10 @@ watch(
       } else {
         geojsonData = municipioGeoJson.value!
       }
+
+      // Reexibir a camada municipal caso estivesse oculta
+      map.setLayoutProperty('municipios-fill', 'visibility', 'visible')
+      map.setLayoutProperty('municipios-borders', 'visibility', 'visible')
 
       // Destacar o município selecionado no mapa
       if (map.getLayer('municipio-highlight')) {
@@ -649,10 +612,30 @@ watch(
     if (dashboardStore.selectedMunicipio) return
 
     if (newLevel === 'municipios') {
-      showLevelMunicipios(map)
+      // Ocultar estados
+      map.setLayoutProperty('states-fill', 'visibility', 'none')
+      map.setLayoutProperty('states-borders', 'visibility', 'none')
+      if (map.getLayer('states-extrusion')) {
+        map.setLayoutProperty('states-extrusion', 'visibility', 'none')
+      }
+
+      // Carregar e exibir municípios nacionais
       await loadNationalMunicipalities(map)
+      map.setLayoutProperty('municipios-fill', 'visibility', 'visible')
+      map.setLayoutProperty('municipios-borders', 'visibility', 'visible')
     } else {
-      showLevelEstados(map)
+      // Ocultar municípios
+      if (map.getLayer('municipios-fill')) {
+        map.setLayoutProperty('municipios-fill', 'visibility', 'none')
+        map.setLayoutProperty('municipios-borders', 'visibility', 'none')
+        if (map.getLayer('municipios-extrusion')) {
+          map.setLayoutProperty('municipios-extrusion', 'visibility', 'none')
+        }
+      }
+
+      // Exibir estados
+      map.setLayoutProperty('states-fill', 'visibility', 'visible')
+      map.setLayoutProperty('states-borders', 'visibility', 'visible')
     }
 
     updateThematicVisualization()

@@ -28,7 +28,6 @@ export function useMapboxMap() {
         pitch: 0,
         bearing: 0,
         antialias: true,
-        maxTileCacheSize: 500,
         ...options,
       })
 
