@@ -1,12 +1,20 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { useDashboardStore } from '../dashboard.store'
 import { useMunicipioStatsQuery } from '../composables/useMunicipioStats'
 import EconomicChart from './EconomicChart.vue'
 
 const dashboardStore = useDashboardStore()
 const { data: stats, isLoading, error } = useMunicipioStatsQuery()
-const showToast = ref(false)
+const isExpanded = ref(false)
+
+// Reset panel expansion state when a new municipality is selected
+watch(
+  () => dashboardStore.selectedMunicipio,
+  () => {
+    isExpanded.value = false
+  }
+)
 
 // Formatar valores financeiros de forma amigável (Milhões ou Bilhões)
 const formatCurrencyHumanized = (value: number) => {
@@ -26,43 +34,28 @@ const formatCurrencyHumanized = (value: number) => {
 const formatNumber = (val: number) => {
   return val.toLocaleString('pt-BR')
 }
-
-// Copiar URL do Dashboard com filtros aplicados
-const copyShareLink = async () => {
-  try {
-    await navigator.clipboard.writeText(window.location.href)
-    showToast.value = true
-    setTimeout(() => {
-      showToast.value = false
-    }, 2000)
-  } catch (err) {
-    console.error('Erro ao copiar link:', err)
-  }
-}
 </script>
 
 <template>
-  <!-- Toast de Sucesso -->
-  <transition name="toast-fade">
-    <div
-      v-if="showToast"
-      class="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 glass-panel border border-emerald-500/30 px-5 py-3 rounded-xl shadow-2xl flex items-center gap-2.5 text-xs text-slate-100"
-    >
-      <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
-      Link do dashboard copiado com sucesso!
-    </div>
-  </transition>
-
   <transition name="slide-panel">
     <div
       v-if="dashboardStore.sidebarOpen"
       class="absolute top-4 right-4 bottom-4 z-30 w-96 max-w-[calc(100vw-2rem)] glass-panel border border-slate-800/80 shadow-2xl rounded-2xl flex flex-col overflow-hidden"
+      :class="{ 'is-expanded': isExpanded }"
     >
+      <!-- Swipe/Drag handle helper (visible on mobile only) -->
+      <div
+        class="sm:hidden w-full py-2 flex justify-center cursor-pointer select-none"
+        @click="isExpanded = !isExpanded"
+      >
+        <div class="w-12 h-1 bg-slate-700/80 hover:bg-slate-600 rounded-full transition-colors"></div>
+      </div>
+
       <!-- Header -->
       <div
-        class="px-6 py-5 border-b border-slate-800/80 flex items-center justify-between bg-slate-900/40"
+        class="px-6 py-5 border-b border-slate-800/80 flex items-center justify-between bg-slate-900/40 select-none cursor-pointer sm:cursor-default"
       >
-        <div>
+        <div class="flex-grow" @click="isExpanded = !isExpanded">
           <h2 class="text-lg font-bold text-slate-100 leading-tight">
             {{ dashboardStore.selectedMunicipio?.nome }}
           </h2>
@@ -73,26 +66,28 @@ const copyShareLink = async () => {
           </p>
         </div>
         <div class="flex items-center gap-2">
-          <!-- Botão Compartilhar -->
+          <!-- Botão Expandir/Recolher (apenas mobile) -->
           <button
-            title="Compartilhar Link do Dashboard"
-            class="w-8 h-8 rounded-lg bg-slate-900/60 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-sky-400 flex items-center justify-center transition-colors cursor-pointer"
-            @click="copyShareLink"
+            class="sm:hidden w-8 h-8 rounded-lg bg-slate-900/60 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 flex items-center justify-center transition-all cursor-pointer"
+            :title="isExpanded ? 'Recolher Painel' : 'Expandir Painel'"
+            @click.stop="isExpanded = !isExpanded"
           >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="2"
-                d="M8.684 10.742l4.828-2.414m0 0a3 3 0 10-3.62-1.09l-4.829 2.414m4.829 2.414a3 3 0 11-3.62 1.09l4.829-2.414M12 12V2.25"
-              />
+            <svg
+              class="w-4 h-4 transition-transform duration-300"
+              :class="{ 'rotate-180': isExpanded }"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7" />
             </svg>
           </button>
+
 
           <!-- Botão Fechar -->
           <button
             class="w-8 h-8 rounded-lg bg-slate-900/60 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 flex items-center justify-center transition-colors cursor-pointer"
-            @click="dashboardStore.closeSidebar"
+            @click.stop="dashboardStore.closeSidebar"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
@@ -107,7 +102,10 @@ const copyShareLink = async () => {
       </div>
 
       <!-- Content Area -->
-      <div class="flex-grow overflow-y-auto px-6 py-5 space-y-6">
+      <div
+        class="flex-grow overflow-y-auto px-6 py-5 space-y-6 transition-opacity duration-200"
+        :class="{ 'opacity-0 pointer-events-none sm:opacity-100 sm:pointer-events-auto': !isExpanded }"
+      >
         <!-- Skeleton Loading -->
         <div v-if="isLoading" class="space-y-6 animate-pulse">
           <div class="space-y-2">
@@ -228,16 +226,6 @@ const copyShareLink = async () => {
   opacity: 0;
 }
 
-.toast-fade-enter-active,
-.toast-fade-leave-active {
-  transition: all 0.25s ease;
-}
-
-.toast-fade-enter-from,
-.toast-fade-leave-to {
-  opacity: 0;
-  transform: translate(-50%, 12px);
-}
 
 @media (max-width: 640px) {
   .slide-panel-enter-from,
@@ -254,8 +242,13 @@ const copyShareLink = async () => {
     bottom: 0 !important;
     width: 100% !important;
     max-width: 100% !important;
-    height: 65vh !important;
+    height: 105px !important; /* Altura minimizada */
     border-radius: 20px 20px 0 0 !important;
+    transition: height 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.35s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  }
+
+  div.absolute.is-expanded {
+    height: 65vh !important; /* Altura expandida */
   }
 }
 </style>

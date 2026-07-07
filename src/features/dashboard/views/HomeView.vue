@@ -92,7 +92,7 @@ watch(
       <MapContainer />
 
       <!-- Overlay Search Bar -->
-      <div class="absolute top-8 left-8 z-10 w-80 max-w-full">
+      <div class="absolute top-4 left-4 right-4 md:right-auto md:w-80 md:top-8 md:left-8 z-10">
         <div class="glass-panel p-4 rounded-xl shadow-2xl">
           <p class="text-[10px] text-sky-400 font-bold mb-2 uppercase tracking-wider">
             Brasil em Dados
