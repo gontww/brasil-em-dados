@@ -2,6 +2,8 @@
 
 **Brasil em Dados** é uma aplicação interativa 100% frontend para visualização de dados demográficos, econômicos e setoriais de todos os municípios do Brasil diretamente em um mapa 2D e 3D. O projeto foi estruturado com foco em altíssima performance, design premium (glassmorphism) e excelente experiência do usuário.
 
+Visite o site aqui: https://brasilemdados.gont.com.br
+
 ---
 
 ## 🚀 Tecnologias Utilizadas
