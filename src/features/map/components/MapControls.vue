@@ -52,8 +52,19 @@ const legendInfo = computed(() => {
     :title="isMobileControlsOpen ? 'Fechar Filtros' : 'Abrir Filtros'"
     @click="isMobileControlsOpen = !isMobileControlsOpen"
   >
-    <svg v-if="isMobileControlsOpen" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12" />
+    <svg
+      v-if="isMobileControlsOpen"
+      class="w-5 h-5"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        stroke-width="2.5"
+        d="M6 18L18 6M6 6l12 12"
+      />
     </svg>
     <svg v-else class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path
@@ -78,8 +89,8 @@ const legendInfo = computed(() => {
 
       <!-- Seletor de Indicador -->
       <div>
-        <label class="text-[9px] text-slate-500 font-bold uppercase tracking-wider block mb-1.5"
-          >Indicador Temático</label
+        <span class="text-[9px] text-slate-500 font-bold uppercase tracking-wider block mb-1.5"
+          >Indicador Temático</span
         >
         <div class="grid grid-cols-2 gap-1.5">
           <button
@@ -166,8 +177,8 @@ const legendInfo = computed(() => {
     >
       <!-- Seletor de Indicador -->
       <div>
-        <label class="text-[10px] text-slate-500 font-bold uppercase tracking-wider block mb-2"
-          >Indicador Temático</label
+        <span class="text-[10px] text-slate-500 font-bold uppercase tracking-wider block mb-2"
+          >Indicador Temático</span
         >
         <div class="grid grid-cols-2 gap-1.5">
           <button
@@ -271,7 +282,9 @@ const legendInfo = computed(() => {
       v-if="legendInfo"
       class="md:hidden fixed z-10 glass-panel p-3.5 rounded-xl border border-slate-800/80 shadow-2xl flex flex-col gap-2 transition-all duration-300"
       :class="[
-        dashboardStore.selectedMunicipio ? 'bottom-[115px] left-4 right-16' : 'bottom-6 left-4 right-16',
+        dashboardStore.selectedMunicipio
+          ? 'bottom-[115px] left-4 right-16'
+          : 'bottom-6 left-4 right-16',
       ]"
     >
       <span class="text-[10px] text-slate-300 font-bold tracking-wide uppercase">{{

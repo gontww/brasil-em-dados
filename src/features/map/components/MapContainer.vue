@@ -9,6 +9,9 @@ import { useQuery } from '@tanstack/vue-query'
 import { ibgeLocalidadesService } from '../../../services/ibge/ibgeLocalidades.service'
 import MapControls from './MapControls.vue'
 import type { FeatureCollection, Feature } from 'geojson'
+import type { Municipio } from '../../../services/ibge/ibge.types'
+
+type FeatureId = string | number
 
 const mapContainer = ref<HTMLDivElement | null>(null)
 const { mapInstance, isLoaded, error, initializeMap } = useMapboxMap()
@@ -26,18 +29,26 @@ const lastAppliedIndicator = ref<Record<string, string>>({})
 const lastAppliedGeoJsonRef = ref<Record<string, unknown>>({})
 
 // Helper functions to safely modify layers only if they exist in the map style
-const safeSetLayoutProperty = (map: mapboxgl.Map, layerId: string, name: string, value: any) => {
+const safeSetLayoutProperty = (
+  map: mapboxgl.Map,
+  layerId: string,
+  name: string,
+  value: unknown
+) => {
   if (map.getLayer(layerId)) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     map.setLayoutProperty(layerId, name as any, value)
   }
 }
 
-const safeSetPaintProperty = (map: mapboxgl.Map, layerId: string, name: string, value: any) => {
+const safeSetPaintProperty = (map: mapboxgl.Map, layerId: string, name: string, value: unknown) => {
   if (map.getLayer(layerId)) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     map.setPaintProperty(layerId, name as any, value)
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const safeSetFilter = (map: mapboxgl.Map, layerId: string, filter: any) => {
   if (map.getLayer(layerId)) {
     map.setFilter(layerId, filter)
@@ -142,7 +153,7 @@ const setupStatesLayers = (map: mapboxgl.Map, geojsonData: FeatureCollection) =>
   })
 
   // Hover effect para estados
-  let stateHoverId: string | number | null = null
+  let stateHoverId: FeatureId | null = null
 
   map.on('mousemove', 'states-fill', (e) => {
     if (e.features && e.features.length > 0) {
@@ -196,7 +207,7 @@ watch(isLoaded, async (loaded) => {
 // pois o raycasting do fill-extrusion do Mapbox usa a projeção visual 3D que fica
 // deslocada com pitch alto, causando hover/clique no município errado.
 const setupMunicipiosEvents = (map: mapboxgl.Map) => {
-  let municipioHoverId: string | number | null = null
+  let municipioHoverId: FeatureId | null = null
 
   const clearHover = () => {
     if (municipioHoverId !== null) {
@@ -206,11 +217,10 @@ const setupMunicipiosEvents = (map: mapboxgl.Map) => {
     map.getCanvas().style.cursor = ''
   }
 
-  const applyHover = (featureId: string | number | undefined) => {
-    const newId = featureId ?? null
-    if (newId === municipioHoverId) return // Sem mudança
+  const applyHover = (featureId: FeatureId | null = null) => {
+    if (featureId === municipioHoverId) return // Sem mudança
     clearHover()
-    municipioHoverId = newId
+    municipioHoverId = featureId
     if (municipioHoverId !== null) {
       map.setFeatureState({ source: 'municipios-source', id: municipioHoverId }, { hover: true })
     }
@@ -560,6 +570,109 @@ watch(
   () => updateThematicVisualization()
 )
 
+const handleDeselectMunicipio = async (map: mapboxgl.Map) => {
+  // Se desmarcado, limpar destaque e resetar câmera nacional
+  safeSetFilter(map, 'municipio-highlight', ['==', ['get', 'id'], ''])
+
+  // Limpar camada de municípios se voltar para visualização nacional
+  loadedEstadoCode.value = null
+  municipioGeoJson.value = null
+
+  if (dashboardStore.mapLevel === 'municipios') {
+    // Se o nível do mapa for municípios, garantir que os municípios nacionais estão carregados e exibidos
+    await loadNationalMunicipalities(map)
+    safeSetLayoutProperty(map, 'municipios-fill', 'visibility', 'visible')
+    safeSetLayoutProperty(map, 'municipios-borders', 'visibility', 'visible')
+
+    safeSetLayoutProperty(map, 'states-fill', 'visibility', 'none')
+    safeSetLayoutProperty(map, 'states-borders', 'visibility', 'none')
+  } else {
+    // Se voltar para o nível de estados, ocultar municípios e exibir estados
+    safeSetLayoutProperty(map, 'municipios-fill', 'visibility', 'none')
+    safeSetLayoutProperty(map, 'municipios-borders', 'visibility', 'none')
+    safeSetLayoutProperty(map, 'municipios-extrusion', 'visibility', 'none')
+    safeSetLayoutProperty(map, 'municipios-hit', 'visibility', 'none')
+
+    safeSetLayoutProperty(map, 'states-fill', 'visibility', 'visible')
+    safeSetLayoutProperty(map, 'states-borders', 'visibility', 'visible')
+  }
+
+  map.flyTo({
+    center: [-51.9253, -14.235],
+    zoom: 6.1,
+    duration: 1500,
+  })
+
+  // Atualizar visualização temática nacional se houver um tema ativo
+  updateThematicVisualization()
+}
+
+const handleSelectMunicipio = async (map: mapboxgl.Map, newMunicipio: Municipio) => {
+  // Garantir que o nível do mapa está em 'municipios' ao selecionar um município
+  if (dashboardStore.mapLevel !== 'municipios') {
+    dashboardStore.setMapLevel('municipios')
+  }
+
+  isGeoJsonLoading.value = true
+
+  try {
+    // Ocultar preenchimento dos estados para focar nos municípios
+    safeSetLayoutProperty(map, 'states-fill', 'visibility', 'none')
+    safeSetLayoutProperty(map, 'states-borders', 'visibility', 'none')
+
+    // Sempre carregar o GeoJSON nacional completo (loadNationalMunicipalities tem cache interno)
+    // Isso garante que todos os municípios sejam exibidos, independente do nível anterior
+    await loadNationalMunicipalities(map)
+    const geojsonData = nationalMunicipalitiesGeoJson.value!
+
+    // Reexibir a camada municipal caso estivesse oculta
+    safeSetLayoutProperty(map, 'municipios-fill', 'visibility', 'visible')
+    safeSetLayoutProperty(map, 'municipios-borders', 'visibility', 'visible')
+
+    // Destacar o município selecionado no mapa
+    safeSetFilter(map, 'municipio-highlight', ['==', ['get', 'id'], String(newMunicipio.id)])
+
+    // Atualizar estilos temáticos SEM ajustar câmera
+    // (o fitBounds abaixo cuidará do ângulo e posição da câmera)
+    await updateThematicVisualization(false)
+
+    // Encontrar a feature do município para obter os limites geográficos
+    // O GeoJSON pode usar 'id' ou 'codigo_ibg' como identificador
+    const munIdStr = String(newMunicipio.id)
+    const is3D = dashboardStore.viewMode === '3d'
+
+    if (geojsonData && geojsonData.features) {
+      const feature = geojsonData.features.find(
+        (f: Feature) =>
+          f.properties?.id === munIdStr || String(f.properties?.codigo_ibg) === munIdStr
+      )
+
+      if (feature) {
+        const bounds = geojsonService.getFeatureBounds(feature)
+        // Calcular o centro do município a partir dos bounds
+        const centerLng = (bounds[0][0] + bounds[1][0]) / 2
+        const centerLat = (bounds[0][1] + bounds[1][1]) / 2
+        // easeTo anima linearmente sem o zoom-out intermediário do flyTo
+        map.easeTo({
+          center: [centerLng, centerLat],
+          zoom: 6.1,
+          pitch: is3D ? 55 : 0,
+          bearing: is3D ? -15 : 0,
+          duration: 1200,
+        })
+      } else {
+        console.warn(
+          `Feature não encontrada para o município ${newMunicipio.id} (${newMunicipio.nome})`
+        )
+      }
+    }
+  } catch (err) {
+    console.error('Erro ao focar no município:', err)
+  } finally {
+    isGeoJsonLoading.value = false
+  }
+}
+
 // Sincronizar store do Pinia com a câmera do mapa e destaques
 watch(
   () => dashboardStore.selectedMunicipio,
@@ -568,105 +681,9 @@ watch(
     const map = mapInstance.value
 
     if (!newMunicipio) {
-      // Se desmarcado, limpar destaque e resetar câmera nacional
-      safeSetFilter(map, 'municipio-highlight', ['==', ['get', 'id'], ''])
-
-      // Limpar camada de municípios se voltar para visualização nacional
-      loadedEstadoCode.value = null
-      municipioGeoJson.value = null
-
-      if (dashboardStore.mapLevel === 'municipios') {
-        // Se o nível do mapa for municípios, garantir que os municípios nacionais estão carregados e exibidos
-        await loadNationalMunicipalities(map)
-        safeSetLayoutProperty(map, 'municipios-fill', 'visibility', 'visible')
-        safeSetLayoutProperty(map, 'municipios-borders', 'visibility', 'visible')
-
-        safeSetLayoutProperty(map, 'states-fill', 'visibility', 'none')
-        safeSetLayoutProperty(map, 'states-borders', 'visibility', 'none')
-      } else {
-        // Se voltar para o nível de estados, ocultar municípios e exibir estados
-        safeSetLayoutProperty(map, 'municipios-fill', 'visibility', 'none')
-        safeSetLayoutProperty(map, 'municipios-borders', 'visibility', 'none')
-        safeSetLayoutProperty(map, 'municipios-extrusion', 'visibility', 'none')
-        safeSetLayoutProperty(map, 'municipios-hit', 'visibility', 'none')
-
-        safeSetLayoutProperty(map, 'states-fill', 'visibility', 'visible')
-        safeSetLayoutProperty(map, 'states-borders', 'visibility', 'visible')
-      }
-
-      map.flyTo({
-        center: [-51.9253, -14.235],
-        zoom: 6.1,
-        duration: 1500,
-      })
-
-      // Atualizar visualização temática nacional se houver um tema ativo
-      updateThematicVisualization()
-      return
-    }
-
-    // Garantir que o nível do mapa está em 'municipios' ao selecionar um município
-    if (dashboardStore.mapLevel !== 'municipios') {
-      dashboardStore.setMapLevel('municipios')
-    }
-
-    isGeoJsonLoading.value = true
-
-    try {
-      // Ocultar preenchimento dos estados para focar nos municípios
-      safeSetLayoutProperty(map, 'states-fill', 'visibility', 'none')
-      safeSetLayoutProperty(map, 'states-borders', 'visibility', 'none')
-
-      // Sempre carregar o GeoJSON nacional completo (loadNationalMunicipalities tem cache interno)
-      // Isso garante que todos os municípios sejam exibidos, independente do nível anterior
-      await loadNationalMunicipalities(map)
-      const geojsonData = nationalMunicipalitiesGeoJson.value!
-
-      // Reexibir a camada municipal caso estivesse oculta
-      safeSetLayoutProperty(map, 'municipios-fill', 'visibility', 'visible')
-      safeSetLayoutProperty(map, 'municipios-borders', 'visibility', 'visible')
-
-      // Destacar o município selecionado no mapa
-      safeSetFilter(map, 'municipio-highlight', ['==', ['get', 'id'], String(newMunicipio.id)])
-
-      // Atualizar estilos temáticos SEM ajustar câmera
-      // (o fitBounds abaixo cuidará do ângulo e posição da câmera)
-      await updateThematicVisualization(false)
-
-      // Encontrar a feature do município para obter os limites geográficos
-      // O GeoJSON pode usar 'id' ou 'codigo_ibg' como identificador
-      const munIdStr = String(newMunicipio.id)
-      const is3D = dashboardStore.viewMode === '3d'
-
-      if (geojsonData && geojsonData.features) {
-        const feature = geojsonData.features.find(
-          (f: Feature) =>
-            f.properties?.id === munIdStr || String(f.properties?.codigo_ibg) === munIdStr
-        )
-
-        if (feature) {
-          const bounds = geojsonService.getFeatureBounds(feature)
-          // Calcular o centro do município a partir dos bounds
-          const centerLng = (bounds[0][0] + bounds[1][0]) / 2
-          const centerLat = (bounds[0][1] + bounds[1][1]) / 2
-          // easeTo anima linearmente sem o zoom-out intermediário do flyTo
-          map.easeTo({
-            center: [centerLng, centerLat],
-            zoom: 6.1,
-            pitch: is3D ? 55 : 0,
-            bearing: is3D ? -15 : 0,
-            duration: 1200,
-          })
-        } else {
-          console.warn(
-            `Feature não encontrada para o município ${newMunicipio.id} (${newMunicipio.nome})`
-          )
-        }
-      }
-    } catch (err) {
-      console.error('Erro ao focar no município:', err)
-    } finally {
-      isGeoJsonLoading.value = false
+      await handleDeselectMunicipio(map)
+    } else {
+      await handleSelectMunicipio(map, newMunicipio)
     }
   }
 )

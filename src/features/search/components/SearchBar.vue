@@ -128,6 +128,7 @@ const handleKeyDown = (e: KeyboardEvent) => {
         ref="searchInput"
         v-model="searchQuery"
         type="text"
+        aria-label="Pesquisar município"
         :placeholder="placeholder || 'Pesquise por município (ex: Chuí)...'"
         class="w-full h-11 bg-slate-900/90 text-slate-100 placeholder-slate-500 text-sm font-medium pl-4 pr-10 rounded-xl border border-slate-800 focus:border-sky-500/50 focus:outline-none focus:ring-2 focus:ring-sky-500/10 shadow-lg transition-all duration-200"
         @focus="isOpen = searchQuery.trim().length >= 2"

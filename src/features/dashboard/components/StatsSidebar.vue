@@ -48,7 +48,9 @@ const formatNumber = (val: number) => {
         class="sm:hidden w-full py-2 flex justify-center cursor-pointer select-none"
         @click="isExpanded = !isExpanded"
       >
-        <div class="w-12 h-1 bg-slate-700/80 hover:bg-slate-600 rounded-full transition-colors"></div>
+        <div
+          class="w-12 h-1 bg-slate-700/80 hover:bg-slate-600 rounded-full transition-colors"
+        ></div>
       </div>
 
       <!-- Header -->
@@ -79,10 +81,14 @@ const formatNumber = (val: number) => {
               stroke="currentColor"
               viewBox="0 0 24 24"
             >
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7" />
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2.5"
+                d="M19 9l-7 7-7-7"
+              />
             </svg>
           </button>
-
 
           <!-- Botão Fechar -->
           <button
@@ -104,7 +110,9 @@ const formatNumber = (val: number) => {
       <!-- Content Area -->
       <div
         class="flex-grow overflow-y-auto px-6 py-5 space-y-6 transition-opacity duration-200"
-        :class="{ 'opacity-0 pointer-events-none sm:opacity-100 sm:pointer-events-auto': !isExpanded }"
+        :class="{
+          'opacity-0 pointer-events-none sm:opacity-100 sm:pointer-events-auto': !isExpanded,
+        }"
       >
         <!-- Skeleton Loading -->
         <div v-if="isLoading" class="space-y-6 animate-pulse">
@@ -226,7 +234,6 @@ const formatNumber = (val: number) => {
   opacity: 0;
 }
 
-
 @media (max-width: 640px) {
   .slide-panel-enter-from,
   .slide-panel-leave-to {
@@ -244,7 +251,9 @@ const formatNumber = (val: number) => {
     max-width: 100% !important;
     height: 105px !important; /* Altura minimizada */
     border-radius: 20px 20px 0 0 !important;
-    transition: height 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.35s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    transition:
+      height 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+      transform 0.35s cubic-bezier(0.16, 1, 0.3, 1) !important;
   }
 
   div.absolute.is-expanded {
