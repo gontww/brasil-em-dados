@@ -1,21 +1,25 @@
 <script setup lang="ts">
 import { RouterView } from 'vue-router'
 import Navbar from './components/layout/Navbar.vue'
+import Footer from './components/layout/Footer.vue'
 </script>
 
 <template>
-  <div class="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
+  <div class="h-screen bg-slate-950 text-slate-100 flex flex-col overflow-hidden">
     <!-- Navbar Component -->
     <Navbar />
 
     <!-- Main Content Area -->
-    <main class="flex-grow pt-16 flex flex-col">
+    <main class="flex-1 min-h-0 pt-16 flex flex-col">
       <RouterView v-slot="{ Component }">
         <transition name="fade" mode="out-in">
           <component :is="Component" />
         </transition>
       </RouterView>
     </main>
+
+    <!-- Footer -->
+    <Footer />
   </div>
 </template>
 

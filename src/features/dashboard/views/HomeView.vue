@@ -86,9 +86,10 @@ watch(
 </script>
 
 <template>
-  <div class="relative w-full h-[calc(100vh-4rem)] overflow-hidden flex flex-col">
+  <div class="relative w-full flex-1 min-h-0 overflow-hidden flex flex-col">
     <!-- Map Container Wrapper -->
-    <div class="flex-grow w-full h-full p-4 md:p-6 bg-slate-950 relative flex flex-col">
+    <div
+      class="flex-grow w-full h-full pt-4 px-4 md:pt-6 md:px-6 md:pb-2 bg-slate-950 relative flex flex-col">
       <MapContainer />
 
       <!-- Overlay Search Bar -->
