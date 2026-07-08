@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, ref, shallowRef, watch } from 'vue'
 import mapboxgl from 'mapbox-gl'
 import { useMapboxMap } from '../composables/useMapboxMap'
 import { useDashboardStore, type MapIndicator } from '../../dashboard/dashboard.store'
@@ -17,9 +17,9 @@ const dashboardStore = useDashboardStore()
 // Cache local
 const loadedEstadoCode = ref<string | null>(null)
 const isGeoJsonLoading = ref(false)
-const stateGeoJson = ref<FeatureCollection | null>(null)
-const municipioGeoJson = ref<FeatureCollection | null>(null)
-const nationalMunicipalitiesGeoJson = ref<FeatureCollection | null>(null)
+const stateGeoJson = shallowRef<FeatureCollection | null>(null)
+const municipioGeoJson = shallowRef<FeatureCollection | null>(null)
+const nationalMunicipalitiesGeoJson = shallowRef<FeatureCollection | null>(null)
 
 // Cache para evitar recálculos redundantes e chamadas lentas ao setFeatureState do Mapbox
 const lastAppliedIndicator = ref<Record<string, string>>({})
@@ -82,8 +82,8 @@ onMounted(() => {
     initializeMap(mapContainer.value, {
       center: [-51.9253, -14.235], // Centro do Brasil
       zoom: 3.8,
-      minZoom: 3,
-      maxZoom: 14,
+      minZoom: 3.5,
+      maxZoom: 5.95,
     })
   }
 })
@@ -256,6 +256,7 @@ const ensureMunicipiosSource = (map: mapboxgl.Map, geojsonData: FeatureCollectio
     map.addSource('municipios-source', {
       type: 'geojson',
       data: geojsonData,
+      maxzoom: 5,
     })
 
     // Preenchimento dos municípios
@@ -370,9 +371,10 @@ const applyThematicStyling = (
   ) {
     geojsonData.features.forEach((feat) => {
       const code = feat.properties?.codigo_ibg || feat.properties?.id
-      const val = indicatorData[code] || 0
-      map.setFeatureState({ source: sourceId, id: Number(code) }, { value: val })
+      feat.properties!._value = indicatorData[code] || 0
     })
+    const geoSource = map.getSource(sourceId) as mapboxgl.GeoJSONSource
+    if (geoSource) geoSource.setData(geojsonData)
     lastAppliedIndicator.value[sourceId] = indicator
     lastAppliedGeoJsonRef.value[sourceId] = geojsonData
   }
@@ -381,7 +383,7 @@ const applyThematicStyling = (
   const colorExpression: mapboxgl.Expression = [
     'interpolate',
     ['linear'],
-    ['feature-state', 'value'],
+    ['get', '_value'],
     0,
     '#0f172a', // Slate-900 (Dark Slate)
     p20,
@@ -421,7 +423,7 @@ const applyThematicStyling = (
     const heightExpression: mapboxgl.Expression = [
       'interpolate',
       ['linear'],
-      ['feature-state', 'value'],
+      ['get', '_value'],
       0,
       0,
       maxVal,
