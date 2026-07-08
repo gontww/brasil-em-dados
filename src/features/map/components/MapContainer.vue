@@ -192,23 +192,13 @@ watch(isLoaded, async (loaded) => {
 })
 
 // Registra eventos de clique e hover para municípios (tanto 2D quanto 3D)
+// Em modo 3D, usamos a camada 'municipios-hit' (fill transparente) como alvo de hit-test,
+// pois o raycasting do fill-extrusion do Mapbox usa a projeção visual 3D que fica
+// deslocada com pitch alto, causando hover/clique no município errado.
 const setupMunicipiosEvents = (map: mapboxgl.Map) => {
   let municipioHoverId: string | number | null = null
 
-  const handleMouseMove = (e: mapboxgl.MapLayerMouseEvent) => {
-    if (e.features && e.features.length > 0) {
-      if (municipioHoverId !== null) {
-        map.setFeatureState({ source: 'municipios-source', id: municipioHoverId }, { hover: false })
-      }
-      municipioHoverId = e.features[0].id ?? null
-      if (municipioHoverId !== null) {
-        map.setFeatureState({ source: 'municipios-source', id: municipioHoverId }, { hover: true })
-      }
-      map.getCanvas().style.cursor = 'pointer'
-    }
-  }
-
-  const handleMouseLeave = () => {
+  const clearHover = () => {
     if (municipioHoverId !== null) {
       map.setFeatureState({ source: 'municipios-source', id: municipioHoverId }, { hover: false })
     }
@@ -216,9 +206,20 @@ const setupMunicipiosEvents = (map: mapboxgl.Map) => {
     map.getCanvas().style.cursor = ''
   }
 
-  const handleLayerClick = (e: mapboxgl.MapLayerMouseEvent) => {
-    if (e.features && e.features.length > 0 && municipiosList.value) {
-      const props = e.features[0].properties
+  const applyHover = (featureId: string | number | undefined) => {
+    const newId = featureId ?? null
+    if (newId === municipioHoverId) return // Sem mudança
+    clearHover()
+    municipioHoverId = newId
+    if (municipioHoverId !== null) {
+      map.setFeatureState({ source: 'municipios-source', id: municipioHoverId }, { hover: true })
+    }
+    map.getCanvas().style.cursor = 'pointer'
+  }
+
+  const handleClick = (features: mapboxgl.MapboxGeoJSONFeature[]) => {
+    if (features.length > 0 && municipiosList.value) {
+      const props = features[0].properties
       if (props && props.id) {
         const idNum = Number.parseInt(props.id)
         const matched = municipiosList.value.find((m) => m.id === idNum)
@@ -229,15 +230,35 @@ const setupMunicipiosEvents = (map: mapboxgl.Map) => {
     }
   }
 
-  // Camada 2D (fill)
-  map.on('mousemove', 'municipios-fill', handleMouseMove)
-  map.on('mouseleave', 'municipios-fill', handleMouseLeave)
-  map.on('click', 'municipios-fill', handleLayerClick)
+  // Determinar qual camada usar para hit-test baseado no modo de visualização
+  const getHitTestLayer = (): string => {
+    return dashboardStore.viewMode === '3d' ? 'municipios-hit' : 'municipios-fill'
+  }
 
-  // Camada 3D (extrusion)
-  map.on('mousemove', 'municipios-extrusion', handleMouseMove)
-  map.on('mouseleave', 'municipios-extrusion', handleMouseLeave)
-  map.on('click', 'municipios-extrusion', handleLayerClick)
+  // Usar eventos no nível do mapa para controlar qual camada é consultada
+  map.on('mousemove', (e) => {
+    if (!map.getLayer('municipios-fill') && !map.getLayer('municipios-hit')) return
+
+    const hitLayer = getHitTestLayer()
+    if (!map.getLayer(hitLayer)) return
+
+    const features = map.queryRenderedFeatures(e.point, { layers: [hitLayer] })
+    if (features.length > 0) {
+      applyHover(features[0].id)
+    } else {
+      clearHover()
+    }
+  })
+
+  map.on('click', (e) => {
+    if (!map.getLayer('municipios-fill') && !map.getLayer('municipios-hit')) return
+
+    const hitLayer = getHitTestLayer()
+    if (!map.getLayer(hitLayer)) return
+
+    const features = map.queryRenderedFeatures(e.point, { layers: [hitLayer] })
+    handleClick(features)
+  })
 }
 
 // Garante que a fonte de municípios exista no mapa
@@ -301,6 +322,20 @@ const ensureMunicipiosSource = (map: mapboxgl.Map, geojsonData: FeatureCollectio
       },
     })
 
+    // Camada invisível para hit-test em modo 3D
+    // Fica ACIMA da extrusão para capturar eventos do mouse corretamente
+    // usando o footprint 2D (sem o offset de perspectiva 3D)
+    map.addLayer({
+      id: 'municipios-hit',
+      type: 'fill',
+      source: 'municipios-source',
+      layout: { visibility: 'none' }, // Ativada apenas em modo 3D
+      paint: {
+        'fill-color': '#000000',
+        'fill-opacity': 0, // Totalmente transparente — apenas para interação
+      },
+    })
+
     // Destaque de bordas do município selecionado
     map.addLayer({
       id: 'municipio-highlight',
@@ -342,6 +377,7 @@ const applyThematicStyling = (
     ])
 
     safeSetLayoutProperty(map, extrusionLayerId, 'visibility', 'none')
+    safeSetLayoutProperty(map, 'municipios-hit', 'visibility', 'none')
 
     // Garantir que a camada 2D fique visível se resetado
     safeSetLayoutProperty(map, fillLayerId, 'visibility', 'visible')
@@ -407,6 +443,9 @@ const applyThematicStyling = (
 
     // Configurar e exibir Extrusão 3D
     safeSetLayoutProperty(map, extrusionLayerId, 'visibility', 'visible')
+
+    // Ativar camada transparente de hit-test para interação precisa em 3D
+    safeSetLayoutProperty(map, 'municipios-hit', 'visibility', 'visible')
     const hoverColorExpression: mapboxgl.Expression = [
       'case',
       ['==', ['get', 'id'], selectedId],
@@ -444,6 +483,7 @@ const applyThematicStyling = (
     safeSetPaintProperty(map, fillLayerId, 'fill-opacity', opacityExpression)
 
     safeSetLayoutProperty(map, extrusionLayerId, 'visibility', 'none')
+    safeSetLayoutProperty(map, 'municipios-hit', 'visibility', 'none')
   }
 }
 
@@ -548,6 +588,7 @@ watch(
         safeSetLayoutProperty(map, 'municipios-fill', 'visibility', 'none')
         safeSetLayoutProperty(map, 'municipios-borders', 'visibility', 'none')
         safeSetLayoutProperty(map, 'municipios-extrusion', 'visibility', 'none')
+        safeSetLayoutProperty(map, 'municipios-hit', 'visibility', 'none')
 
         safeSetLayoutProperty(map, 'states-fill', 'visibility', 'visible')
         safeSetLayoutProperty(map, 'states-borders', 'visibility', 'visible')
@@ -658,6 +699,7 @@ watch(
       safeSetLayoutProperty(map, 'municipios-fill', 'visibility', 'none')
       safeSetLayoutProperty(map, 'municipios-borders', 'visibility', 'none')
       safeSetLayoutProperty(map, 'municipios-extrusion', 'visibility', 'none')
+      safeSetLayoutProperty(map, 'municipios-hit', 'visibility', 'none')
 
       // Exibir estados
       safeSetLayoutProperty(map, 'states-fill', 'visibility', 'visible')
