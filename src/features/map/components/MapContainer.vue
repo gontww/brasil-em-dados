@@ -493,31 +493,30 @@ const updateThematicVisualization = async (adjustCamera = true) => {
           targetGeoJson
         )
       }
-    } else {
+    } else if (stateGeoJson.value) {
       // Exibir Estados
-      if (stateGeoJson.value) {
-        const stateData =
-          indicator !== 'none'
-            ? await ibgeSidraService.getEstadosIndicatorData(indicator)
-            : {}
+      const stateData =
+        indicator !== 'none' ? await ibgeSidraService.getEstadosIndicatorData(indicator) : {}
 
-        applyThematicStyling(
-          map,
-          'brazil-states',
-          'states-fill',
-          'states-extrusion',
-          stateData,
-          indicator,
-          stateGeoJson.value
-        )
-      }
+      applyThematicStyling(
+        map,
+        'brazil-states',
+        'states-fill',
+        'states-extrusion',
+        stateData,
+        indicator,
+        stateGeoJson.value
+      )
     }
   } catch (err) {
     console.error('Erro ao atualizar visualização temática:', err)
   }
 }
 
-watch(() => [dashboardStore.activeIndicator, dashboardStore.viewMode], updateThematicVisualization)
+watch(
+  () => [dashboardStore.activeIndicator, dashboardStore.viewMode],
+  () => updateThematicVisualization()
+)
 
 // Sincronizar store do Pinia com a câmera do mapa e destaques
 watch(
@@ -599,8 +598,7 @@ watch(
       if (geojsonData && geojsonData.features) {
         const feature = geojsonData.features.find(
           (f: Feature) =>
-            f.properties?.id === munIdStr ||
-            String(f.properties?.codigo_ibg) === munIdStr
+            f.properties?.id === munIdStr || String(f.properties?.codigo_ibg) === munIdStr
         )
 
         if (feature) {
@@ -617,7 +615,9 @@ watch(
             duration: 1200,
           })
         } else {
-          console.warn(`Feature não encontrada para o município ${newMunicipio.id} (${newMunicipio.nome})`)
+          console.warn(
+            `Feature não encontrada para o município ${newMunicipio.id} (${newMunicipio.nome})`
+          )
         }
       }
     } catch (err) {
