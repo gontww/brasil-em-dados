@@ -17,6 +17,12 @@ const mapContainer = ref<HTMLDivElement | null>(null)
 const { mapInstance, isLoaded, error, initializeMap } = useMapboxMap()
 const dashboardStore = useDashboardStore()
 
+const { data: estadosList } = useQuery({
+  queryKey: ['estados'],
+  queryFn: () => ibgeLocalidadesService.getEstados(),
+  staleTime: Infinity,
+})
+
 // Cache local
 const loadedEstadoCode = ref<string | null>(null)
 const isGeoJsonLoading = ref(false)
@@ -152,28 +158,95 @@ const setupStatesLayers = (map: mapboxgl.Map, geojsonData: FeatureCollection) =>
     },
   })
 
-  // Hover effect para estados
-  let stateHoverId: FeatureId | null = null
-
-  map.on('mousemove', 'states-fill', (e) => {
-    if (e.features && e.features.length > 0) {
-      if (stateHoverId !== null) {
-        map.setFeatureState({ source: 'brazil-states', id: stateHoverId }, { hover: false })
-      }
-      stateHoverId = e.features[0].id ?? null
-      if (stateHoverId !== null) {
-        map.setFeatureState({ source: 'brazil-states', id: stateHoverId }, { hover: true })
-      }
-      map.getCanvas().style.cursor = 'pointer'
-    }
+  map.addLayer({
+    id: 'states-hit',
+    type: 'fill',
+    source: 'brazil-states',
+    layout: { visibility: 'none' },
+    paint: {
+      'fill-color': '#000000',
+      'fill-opacity': 0,
+    },
   })
 
-  map.on('mouseleave', 'states-fill', () => {
+  map.addLayer({
+    id: 'state-highlight',
+    type: 'line',
+    source: 'brazil-states',
+    filter: ['==', ['get', 'id'], ''],
+    paint: {
+      'line-color': '#38bdf8', // sky-400
+      'line-width': 2.5,
+      'line-opacity': 0.9,
+    },
+  })
+}
+
+// Registra eventos de clique e hover para estados (tanto 2D quanto 3D)
+const setupStatesEvents = (map: mapboxgl.Map) => {
+  let stateHoverId: FeatureId | null = null
+
+  const clearHover = () => {
     if (stateHoverId !== null) {
       map.setFeatureState({ source: 'brazil-states', id: stateHoverId }, { hover: false })
     }
     stateHoverId = null
     map.getCanvas().style.cursor = ''
+  }
+
+  const applyHover = (featureId: FeatureId | null = null) => {
+    if (featureId === stateHoverId) return
+    clearHover()
+    stateHoverId = featureId
+    if (stateHoverId !== null) {
+      map.setFeatureState({ source: 'brazil-states', id: stateHoverId }, { hover: true })
+    }
+    map.getCanvas().style.cursor = 'pointer'
+  }
+
+  const handleClick = (features: mapboxgl.MapboxGeoJSONFeature[]) => {
+    if (features.length > 0 && estadosList.value) {
+      const props = features[0].properties
+      if (props) {
+        const idNum = Number.parseInt(props.codigo_ibg || props.id)
+        const matched = estadosList.value.find((e) => e.id === idNum)
+        if (matched) {
+          dashboardStore.selectEstado(matched)
+        }
+      }
+    }
+  }
+
+  const getHitTestLayer = (): string => {
+    return dashboardStore.viewMode === '3d' && dashboardStore.activeIndicator !== 'none'
+      ? 'states-hit'
+      : 'states-fill'
+  }
+
+  map.on('mousemove', (e) => {
+    if (dashboardStore.mapLevel !== 'estados') return
+    if (!map.getLayer('states-fill') && !map.getLayer('states-hit')) return
+
+    const hitLayer = getHitTestLayer()
+    if (!map.getLayer(hitLayer)) return
+
+    const features = map.queryRenderedFeatures(e.point, { layers: [hitLayer] })
+    if (features.length > 0) {
+      applyHover(features[0].id)
+    } else {
+      clearHover()
+    }
+  })
+
+  map.on('click', (e) => {
+    if (dashboardStore.mapLevel !== 'estados') return
+    if (!map.getLayer('states-fill') && !map.getLayer('states-hit')) return
+
+    const hitLayer = getHitTestLayer()
+    if (!map.getLayer(hitLayer)) return
+
+    const features = map.queryRenderedFeatures(e.point, { layers: [hitLayer] })
+    handleClick(features)
   })
 }
 
@@ -189,6 +262,7 @@ watch(isLoaded, async (loaded) => {
 
     if (stateGeoJson.value) {
       setupStatesLayers(map, stateGeoJson.value)
+      setupStatesEvents(map)
     }
     setupMunicipiosEvents(map)
 
@@ -242,7 +316,9 @@ const setupMunicipiosEvents = (map: mapboxgl.Map) => {
 
   // Determinar qual camada usar para hit-test baseado no modo de visualização
   const getHitTestLayer = (): string => {
-    return dashboardStore.viewMode === '3d' ? 'municipios-hit' : 'municipios-fill'
+    return dashboardStore.viewMode === '3d' && dashboardStore.activeIndicator !== 'none'
+      ? 'municipios-hit'
+      : 'municipios-fill'
   }
 
   // Usar eventos no nível do mapa para controlar qual camada é consultada
@@ -372,9 +448,10 @@ const applyThematicStyling = (
   geojsonData: FeatureCollection
 ) => {
   const is3D = dashboardStore.viewMode === '3d'
-  const selectedId = dashboardStore.selectedMunicipio
-    ? String(dashboardStore.selectedMunicipio.id)
-    : ''
+  const selectedId =
+    sourceId === 'brazil-states'
+      ? (dashboardStore.selectedEstado ? String(dashboardStore.selectedEstado.id) : '')
+      : (dashboardStore.selectedMunicipio ? String(dashboardStore.selectedMunicipio.id) : '')
 
   if (indicator === 'none') {
     // Resetar estilos
@@ -388,6 +465,7 @@ const applyThematicStyling = (
 
     safeSetLayoutProperty(map, extrusionLayerId, 'visibility', 'none')
     safeSetLayoutProperty(map, 'municipios-hit', 'visibility', 'none')
+    safeSetLayoutProperty(map, 'states-hit', 'visibility', 'none')
 
     // Garantir que a camada 2D fique visível se resetado
     safeSetLayoutProperty(map, fillLayerId, 'visibility', 'visible')
@@ -454,8 +532,15 @@ const applyThematicStyling = (
     // Configurar e exibir Extrusão 3D
     safeSetLayoutProperty(map, extrusionLayerId, 'visibility', 'visible')
 
-    // Ativar camada transparente de hit-test para interação precisa em 3D
-    safeSetLayoutProperty(map, 'municipios-hit', 'visibility', 'visible')
+    // Ativar camada transparente de hit-test correspondente
+    if (sourceId === 'brazil-states') {
+      safeSetLayoutProperty(map, 'states-hit', 'visibility', 'visible')
+      safeSetLayoutProperty(map, 'municipios-hit', 'visibility', 'none')
+    } else {
+      safeSetLayoutProperty(map, 'municipios-hit', 'visibility', 'visible')
+      safeSetLayoutProperty(map, 'states-hit', 'visibility', 'none')
+    }
+
     const hoverColorExpression: mapboxgl.Expression = [
       'case',
       ['==', ['get', 'id'], selectedId],
@@ -494,6 +579,7 @@ const applyThematicStyling = (
 
     safeSetLayoutProperty(map, extrusionLayerId, 'visibility', 'none')
     safeSetLayoutProperty(map, 'municipios-hit', 'visibility', 'none')
+    safeSetLayoutProperty(map, 'states-hit', 'visibility', 'none')
   }
 }
 
@@ -688,6 +774,54 @@ watch(
   }
 )
 
+// Sincronizar store do Pinia com a câmera do mapa e destaques para estados
+watch(
+  () => dashboardStore.selectedEstado,
+  async (newEstado) => {
+    if (!mapInstance.value || !isLoaded.value) return
+    const map = mapInstance.value
+
+    if (!newEstado) {
+      safeSetFilter(map, 'state-highlight', ['==', ['get', 'id'], ''])
+      // Se desmarcado e no nível de estados, resetar câmera nacional
+      if (dashboardStore.mapLevel === 'estados') {
+        map.easeTo({
+          center: [-51.9253, -14.235],
+          zoom: 3.8,
+          pitch: dashboardStore.viewMode === '3d' ? 55 : 0,
+          bearing: dashboardStore.viewMode === '3d' ? -15 : 0,
+          duration: 1200,
+        })
+      }
+      updateThematicVisualization()
+    } else {
+      // Destacar o estado selecionado
+      const stateIdStr = String(newEstado.id)
+      safeSetFilter(map, 'state-highlight', ['==', ['get', 'id'], stateIdStr])
+
+      // Encontrar a feature do estado para focar a câmera
+      if (stateGeoJson.value && stateGeoJson.value.features) {
+        const feature = stateGeoJson.value.features.find(
+          (f: Feature) =>
+            String(f.properties?.codigo_ibg) === stateIdStr || String(f.properties?.id) === stateIdStr
+        )
+
+        if (feature) {
+          const bounds = geojsonService.getFeatureBounds(feature)
+          map.fitBounds(bounds, {
+            padding: 50,
+            maxZoom: 6,
+            duration: 1200,
+            pitch: dashboardStore.viewMode === '3d' ? 55 : 0,
+            bearing: dashboardStore.viewMode === '3d' ? -15 : 0,
+          })
+        }
+      }
+      updateThematicVisualization()
+    }
+  }
+)
+
 // Watcher para alternar dinamicamente o nível do mapa entre Estados e Municípios (Nível Nacional)
 watch(
   () => dashboardStore.mapLevel,
@@ -699,6 +833,10 @@ watch(
     if (newLevel === 'estados' && dashboardStore.selectedMunicipio) {
       dashboardStore.selectMunicipio(null)
       return
+    }
+
+    if (newLevel === 'municipios' && dashboardStore.selectedEstado) {
+      dashboardStore.selectEstado(null)
     }
 
     if (newLevel === 'municipios') {
@@ -731,7 +869,7 @@ watch(
 <template>
   <div
     class="relative w-full h-full min-h-[400px] flex-grow rounded-2xl overflow-hidden border border-slate-800/80 bg-slate-950 shadow-2xl"
-    :class="{ 'sidebar-open-mobile': dashboardStore.selectedMunicipio !== null }"
+    :class="{ 'sidebar-open-mobile': dashboardStore.selectedMunicipio !== null || dashboardStore.selectedEstado !== null }"
   >
     <!-- Target Container for Mapbox -->
     <div ref="mapContainer" class="w-full h-full absolute inset-0"></div>

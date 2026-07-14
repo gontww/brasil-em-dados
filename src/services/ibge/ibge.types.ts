@@ -51,3 +51,5 @@ export interface MunicipioStats {
   pibServicos: number
   pibAdministracao: number
 }
+
+export type EstadoStats = MunicipioStats;

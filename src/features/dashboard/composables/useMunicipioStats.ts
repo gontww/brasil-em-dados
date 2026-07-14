@@ -6,15 +6,22 @@ import { ibgeSidraService } from '../../../services/ibge/ibgeSidra.service'
 export function useMunicipioStatsQuery() {
   const dashboardStore = useDashboardStore()
 
-  const enabled = computed(() => !!dashboardStore.selectedMunicipio)
-  const municipio = computed(() => dashboardStore.selectedMunicipio)
+  const enabled = computed(() => !!dashboardStore.selectedMunicipio || !!dashboardStore.selectedEstado)
 
   return useQuery({
-    queryKey: ['municipio-stats', computed(() => municipio.value?.id)],
+    queryKey: [
+      'location-stats',
+      computed(() => dashboardStore.selectedMunicipio?.id || dashboardStore.selectedEstado?.id),
+    ],
     queryFn: () => {
-      const mun = municipio.value
-      if (!mun) throw new Error('Nenhum município selecionado')
-      return ibgeSidraService.getMunicipioStats(mun.id, mun.nome, mun.uf)
+      if (dashboardStore.selectedMunicipio) {
+        const mun = dashboardStore.selectedMunicipio
+        return ibgeSidraService.getMunicipioStats(mun.id, mun.nome, mun.uf)
+      } else if (dashboardStore.selectedEstado) {
+        const est = dashboardStore.selectedEstado
+        return ibgeSidraService.getEstadoStats(est.id, est.nome, est.sigla)
+      }
+      throw new Error('Nenhuma localidade selecionada')
     },
     enabled,
     staleTime: 1000 * 60 * 10, // Cache de 10 minutos

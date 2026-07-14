@@ -1,4 +1,4 @@
-import type { MunicipioStats } from './ibge.types'
+import type { MunicipioStats, EstadoStats } from './ibge.types'
 
 const SIDRA_BASE_URL = 'https://servicodados.ibge.gov.br/api/v3/agregados'
 
@@ -94,6 +94,90 @@ export const ibgeSidraService = {
       id: municipioId,
       nome,
       uf,
+      populacao,
+      pibTotal,
+      pibPerCapita,
+      pibAgropecuaria,
+      pibIndustria,
+      pibServicos,
+      pibAdministracao,
+    }
+
+    memoryCache.set(cacheKey, result)
+    return result
+  },
+
+  /**
+   * Busca dados demográficos e econômicos do estado pelo código IBGE (2 dígitos)
+   */
+  async getEstadoStats(estadoId: number, nome: string, sigla: string): Promise<EstadoStats> {
+    const cacheKey = `stats-est-${estadoId}`
+    if (memoryCache.has(cacheKey)) {
+      return memoryCache.get(cacheKey) as EstadoStats
+    }
+
+    const popUrl = `${SIDRA_BASE_URL}/9514/periodos/2022/variaveis/93?localidades=N3[${estadoId}]`
+    const econUrl = `${SIDRA_BASE_URL}/5938/periodos/2021/variaveis/37|513|517|6575|525?localidades=N3[${estadoId}]`
+
+    const [popRes, econRes] = await Promise.all([fetch(popUrl), fetch(econUrl)])
+
+    if (!popRes.ok || !econRes.ok) {
+      throw new Error(`Erro ao buscar estatísticas do IBGE para o estado ${nome}`)
+    }
+
+    const popData = (await popRes.json()) as SidraResponseItem[]
+    const econData = (await econRes.json()) as SidraResponseItem[]
+
+    // 1. Extrair População
+    let populacao = 0
+    try {
+      const valStr = popData[0]?.resultados?.[0]?.series?.[0]?.serie?.['2022']
+      populacao = valStr ? Number.parseInt(valStr, 10) : 0
+    } catch (e) {
+      console.warn('Erro ao ler dados de população do SIDRA:', e)
+    }
+
+    // 2. Extrair Indicadores Econômicos
+    let pibTotal = 0
+    let pibAgropecuaria = 0
+    let pibIndustria = 0
+    let pibServicos = 0
+    let pibAdministracao = 0
+
+    try {
+      econData.forEach((item) => {
+        const valueStr = item.resultados?.[0]?.series?.[0]?.serie?.['2021']
+        const value = valueStr ? Number.parseInt(valueStr, 10) * 1000 : 0 // SIDRA retorna PIB em Mil Reais
+
+        switch (item.id) {
+          case '37':
+            pibTotal = value
+            break
+          case '513':
+            pibAgropecuaria = value
+            break
+          case '517':
+            pibIndustria = value
+            break
+          case '6575':
+            pibServicos = value
+            break
+          case '525':
+            pibAdministracao = value
+            break
+        }
+      })
+    } catch (e) {
+      console.warn('Erro ao ler dados econômicos do SIDRA:', e)
+    }
+
+    // 3. Calcular PIB per capita
+    const pibPerCapita = populacao > 0 ? pibTotal / populacao : 0
+
+    const result: EstadoStats = {
+      id: estadoId,
+      nome,
+      uf: sigla,
       populacao,
       pibTotal,
       pibPerCapita,

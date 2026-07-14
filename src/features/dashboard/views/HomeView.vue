@@ -12,18 +12,22 @@ const route = useRoute()
 const router = useRouter()
 const dashboardStore = useDashboardStore()
 
-// Carregar lista de municípios para mapear o id da URL
 const { data: municipios } = useQuery({
   queryKey: ['municipios'],
   queryFn: () => ibgeLocalidadesService.getMunicipios(),
   staleTime: Infinity,
 })
 
-// 1. Restaurar o estado a partir das query params do URL
+const { data: estados } = useQuery({
+  queryKey: ['estados'],
+  queryFn: () => ibgeLocalidadesService.getEstados(),
+  staleTime: Infinity,
+})
+
 watch(
-  [municipios, () => route.query],
-  ([muns, query]) => {
-    if (!muns) return
+  [municipios, estados, () => route.query],
+  ([muns, ests, query]) => {
+    if (!muns || !ests) return
 
     const queryMunId = query.mun ? parseInt(query.mun as string, 10) : null
     const currentMunId = dashboardStore.selectedMunicipio?.id || null
@@ -35,6 +39,18 @@ watch(
       }
     } else if (!queryMunId && currentMunId) {
       dashboardStore.selectMunicipio(null)
+    }
+
+    const queryEstId = query.est ? parseInt(query.est as string, 10) : null
+    const currentEstId = dashboardStore.selectedEstado?.id || null
+
+    if (queryEstId && queryEstId !== currentEstId) {
+      const matched = ests.find((e) => e.id === queryEstId)
+      if (matched) {
+        dashboardStore.selectEstado(matched)
+      }
+    } else if (!queryEstId && currentEstId) {
+      dashboardStore.selectEstado(null)
     }
 
     if (query.ind && query.ind !== dashboardStore.activeIndicator) {
@@ -58,24 +74,24 @@ watch(
   { immediate: true }
 )
 
-// 2. Sincronizar o estado da store de volta para a URL
 watch(
   [
     () => dashboardStore.selectedMunicipio,
+    () => dashboardStore.selectedEstado,
     () => dashboardStore.activeIndicator,
     () => dashboardStore.viewMode,
     () => dashboardStore.mapLevel,
   ],
-  ([mun, ind, mode, level]) => {
+  ([mun, est, ind, mode, level]) => {
     const query: Record<string, string | undefined> = {
       ...route.query,
       mun: mun ? String(mun.id) : undefined,
+      est: est ? String(est.id) : undefined,
       ind: ind !== 'none' ? ind : undefined,
       mode: mode !== '2d' ? mode : undefined,
       level: level !== 'estados' ? level : undefined,
     }
 
-    // Limpar valores indefinidos
     Object.keys(query).forEach((key) => {
       if (query[key] === undefined) delete query[key]
     })

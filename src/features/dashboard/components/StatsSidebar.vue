@@ -8,9 +8,9 @@ const dashboardStore = useDashboardStore()
 const { data: stats, isLoading, error } = useMunicipioStatsQuery()
 const isExpanded = ref(false)
 
-// Reset panel expansion state when a new municipality is selected
+// Reset panel expansion state when a new municipality or state is selected
 watch(
-  () => dashboardStore.selectedMunicipio,
+  () => [dashboardStore.selectedMunicipio, dashboardStore.selectedEstado],
   () => {
     isExpanded.value = false
   }
@@ -59,12 +59,17 @@ const formatNumber = (val: number) => {
       >
         <div class="flex-grow" @click="isExpanded = !isExpanded">
           <h2 class="text-lg font-bold text-slate-100 leading-tight">
-            {{ dashboardStore.selectedMunicipio?.nome }}
+            {{ dashboardStore.selectedMunicipio?.nome || dashboardStore.selectedEstado?.nome }}
           </h2>
           <p class="text-xs text-sky-400 font-semibold uppercase tracking-wider mt-0.5">
-            Estado de {{ dashboardStore.selectedMunicipio?.estadoNome }} ({{
-              dashboardStore.selectedMunicipio?.uf
-            }})
+            <span v-if="dashboardStore.selectedMunicipio">
+              Estado de {{ dashboardStore.selectedMunicipio?.estadoNome }} ({{
+                dashboardStore.selectedMunicipio?.uf
+              }})
+            </span>
+            <span v-else-if="dashboardStore.selectedEstado">
+              Unidade Federativa ({{ dashboardStore.selectedEstado?.sigla }})
+            </span>
           </p>
         </div>
         <div class="flex items-center gap-2">
@@ -136,7 +141,7 @@ const formatNumber = (val: number) => {
           </div>
           <h4 class="text-sm font-semibold text-slate-200 mb-1">Erro ao carregar estatísticas</h4>
           <p class="text-xs text-slate-500 max-w-[240px] leading-relaxed">
-            Não foi possível recuperar os dados do IBGE/SIDRA para este município.
+            Não foi possível recuperar os dados do IBGE/SIDRA para esta localidade.
           </p>
         </div>
 

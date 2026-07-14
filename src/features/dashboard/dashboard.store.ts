@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import type { Municipio } from '../../services/ibge/ibge.types'
+import type { Municipio, Estado } from '../../services/ibge/ibge.types'
 
 export type MapIndicator = 'none' | 'populacao' | 'pib' | 'pibPerCapita'
 export type MapViewMode = '2d' | '3d'
@@ -8,6 +8,7 @@ export type MapLevelMode = 'estados' | 'municipios'
 
 export const useDashboardStore = defineStore('dashboard', () => {
   const selectedMunicipio = ref<Municipio | null>(null)
+  const selectedEstado = ref<Estado | null>(null)
   const sidebarOpen = ref(false)
 
   // Controle Temático
@@ -17,11 +18,23 @@ export const useDashboardStore = defineStore('dashboard', () => {
 
   const selectMunicipio = (municipio: Municipio | null) => {
     selectedMunicipio.value = municipio
-    sidebarOpen.value = municipio !== null
+    if (municipio) {
+      selectedEstado.value = null
+    }
+    sidebarOpen.value = municipio !== null || selectedEstado.value !== null
+  }
+
+  const selectEstado = (estado: Estado | null) => {
+    selectedEstado.value = estado
+    if (estado) {
+      selectedMunicipio.value = null
+    }
+    sidebarOpen.value = estado !== null || selectedMunicipio.value !== null
   }
 
   const closeSidebar = () => {
     selectedMunicipio.value = null
+    selectedEstado.value = null
     sidebarOpen.value = false
   }
 
@@ -39,11 +52,13 @@ export const useDashboardStore = defineStore('dashboard', () => {
 
   return {
     selectedMunicipio,
+    selectedEstado,
     sidebarOpen,
     activeIndicator,
     viewMode,
     mapLevel,
     selectMunicipio,
+    selectEstado,
     closeSidebar,
     setIndicator,
     toggleViewMode,
