@@ -6,16 +6,17 @@ const year = new Date().getFullYear()
   <footer class="footer-bar">
     <p class="footer-text">
       Desenvolvido por
-      <strong class="footer-author">Augusto Gontijo</strong>
-      {{ year }} 🧑‍💻
-      <a
-        href="https://www.gont.com.br"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="footer-link"
-      >
-        Acesse meu portfólio aqui
-      </a>
+      <strong class="footer-author">
+        <a
+          href="https://www.gont.com.br"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="footer-link"
+        >
+          Augusto Gontijo
+        </a>
+      </strong>
+      {{ year }}
     </p>
   </footer>
 </template>
