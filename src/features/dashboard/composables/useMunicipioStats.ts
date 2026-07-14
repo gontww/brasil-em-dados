@@ -6,7 +6,9 @@ import { ibgeSidraService } from '../../../services/ibge/ibgeSidra.service'
 export function useMunicipioStatsQuery() {
   const dashboardStore = useDashboardStore()
 
-  const enabled = computed(() => !!dashboardStore.selectedMunicipio || !!dashboardStore.selectedEstado)
+  const enabled = computed(
+    () => !!dashboardStore.selectedMunicipio || !!dashboardStore.selectedEstado
+  )
 
   return useQuery({
     queryKey: [

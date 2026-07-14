@@ -27,6 +27,13 @@ const { data: estadosList } = useQuery({
 const loadedEstadoCode = ref<string | null>(null)
 const isGeoJsonLoading = ref(false)
 const stateGeoJson = shallowRef<FeatureCollection | null>(null)
+
+const loadStatesGeoJson = async () => {
+  if (stateGeoJson.value) return stateGeoJson.value
+  const res = await fetch('/geojson/brazil-states.json')
+  stateGeoJson.value = await res.json()
+  return stateGeoJson.value
+}
 const municipioGeoJson = shallowRef<FeatureCollection | null>(null)
 const nationalMunicipalitiesGeoJson = shallowRef<FeatureCollection | null>(null)
 
@@ -42,20 +49,29 @@ const safeSetLayoutProperty = (
   value: unknown
 ) => {
   if (map.getLayer(layerId)) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    map.setLayoutProperty(layerId, name as any, value)
+    map.setLayoutProperty(
+      layerId,
+      name as Parameters<mapboxgl.Map['setLayoutProperty']>[1],
+      value as never
+    )
   }
 }
 
 const safeSetPaintProperty = (map: mapboxgl.Map, layerId: string, name: string, value: unknown) => {
   if (map.getLayer(layerId)) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    map.setPaintProperty(layerId, name as any, value)
+    map.setPaintProperty(
+      layerId,
+      name as Parameters<mapboxgl.Map['setPaintProperty']>[1],
+      value as never
+    )
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const safeSetFilter = (map: mapboxgl.Map, layerId: string, filter: any) => {
+const safeSetFilter = (
+  map: mapboxgl.Map,
+  layerId: string,
+  filter: Parameters<mapboxgl.Map['setFilter']>[1]
+) => {
   if (map.getLayer(layerId)) {
     map.setFilter(layerId, filter)
   }
@@ -173,7 +189,7 @@ const setupStatesLayers = (map: mapboxgl.Map, geojsonData: FeatureCollection) =>
     id: 'state-highlight',
     type: 'line',
     source: 'brazil-states',
-    filter: ['==', ['get', 'id'], ''],
+    filter: ['==', ['get', 'codigo_ibg'], ''],
     paint: {
       'line-color': '#38bdf8', // sky-400
       'line-width': 2.5,
@@ -256,22 +272,62 @@ watch(isLoaded, async (loaded) => {
     const map = mapInstance.value
     map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'bottom-right')
 
-    // Carregar e guardar geojson de estados localmente
-    const res = await fetch('/geojson/brazil-states.json')
-    stateGeoJson.value = await res.json()
-
-    if (stateGeoJson.value) {
-      setupStatesLayers(map, stateGeoJson.value)
+    const geojson = await loadStatesGeoJson()
+    if (geojson) {
+      setupStatesLayers(map, geojson)
       setupStatesEvents(map)
     }
     setupMunicipiosEvents(map)
 
-    // Se o nível inicial do mapa for municípios, carregar e exibir
-    if (dashboardStore.mapLevel === 'municipios') {
+    // Sincronizar estado inicial a partir dos valores da URL carregados na store
+    const hasMunicipio = !!dashboardStore.selectedMunicipio
+    const hasEstado = !!dashboardStore.selectedEstado
+
+    if (hasMunicipio || dashboardStore.mapLevel === 'municipios') {
+      // Garantir visualização municipal ativa
       safeSetLayoutProperty(map, 'states-fill', 'visibility', 'none')
       safeSetLayoutProperty(map, 'states-borders', 'visibility', 'none')
       await loadNationalMunicipalities(map)
-      updateThematicVisualization()
+
+      if (hasMunicipio) {
+        await handleSelectMunicipio(map, dashboardStore.selectedMunicipio!)
+      } else {
+        await updateThematicVisualization()
+      }
+    } else {
+      // Visualização estadual ativa
+      if (hasEstado) {
+        const stateIdStr = String(dashboardStore.selectedEstado!.id)
+        safeSetFilter(map, 'state-highlight', ['==', ['get', 'codigo_ibg'], stateIdStr])
+
+        // Focar no estado selecionado
+        const geojson = await loadStatesGeoJson()
+        if (geojson && geojson.features) {
+          const feature = geojson.features.find(
+            (f: Feature) =>
+              String(f.properties?.codigo_ibg) === stateIdStr ||
+              String(f.properties?.id) === stateIdStr
+          )
+
+          if (feature) {
+            const bounds = geojsonService.getFeatureBounds(feature)
+            const centerLng = (bounds[0][0] + bounds[1][0]) / 2
+            const centerLat = (bounds[0][1] + bounds[1][1]) / 2
+
+            await updateThematicVisualization(false)
+
+            map.easeTo({
+              center: [centerLng, centerLat],
+              zoom: 6.1,
+              pitch: dashboardStore.viewMode === '3d' ? 55 : 0,
+              bearing: dashboardStore.viewMode === '3d' ? -15 : 0,
+              duration: 1200,
+            })
+          }
+        }
+      } else {
+        await updateThematicVisualization()
+      }
     }
   }
 })
@@ -450,8 +506,12 @@ const applyThematicStyling = (
   const is3D = dashboardStore.viewMode === '3d'
   const selectedId =
     sourceId === 'brazil-states'
-      ? (dashboardStore.selectedEstado ? String(dashboardStore.selectedEstado.id) : '')
-      : (dashboardStore.selectedMunicipio ? String(dashboardStore.selectedMunicipio.id) : '')
+      ? dashboardStore.selectedEstado
+        ? String(dashboardStore.selectedEstado.id)
+        : ''
+      : dashboardStore.selectedMunicipio
+        ? String(dashboardStore.selectedMunicipio.id)
+        : ''
 
   if (indicator === 'none') {
     // Resetar estilos
@@ -782,7 +842,7 @@ watch(
     const map = mapInstance.value
 
     if (!newEstado) {
-      safeSetFilter(map, 'state-highlight', ['==', ['get', 'id'], ''])
+      safeSetFilter(map, 'state-highlight', ['==', ['get', 'codigo_ibg'], ''])
       // Se desmarcado e no nível de estados, resetar câmera nacional
       if (dashboardStore.mapLevel === 'estados') {
         map.easeTo({
@@ -797,27 +857,33 @@ watch(
     } else {
       // Destacar o estado selecionado
       const stateIdStr = String(newEstado.id)
-      safeSetFilter(map, 'state-highlight', ['==', ['get', 'id'], stateIdStr])
+      safeSetFilter(map, 'state-highlight', ['==', ['get', 'codigo_ibg'], stateIdStr])
 
       // Encontrar a feature do estado para focar a câmera
-      if (stateGeoJson.value && stateGeoJson.value.features) {
-        const feature = stateGeoJson.value.features.find(
+      const geojson = await loadStatesGeoJson()
+      if (geojson && geojson.features) {
+        const feature = geojson.features.find(
           (f: Feature) =>
-            String(f.properties?.codigo_ibg) === stateIdStr || String(f.properties?.id) === stateIdStr
+            String(f.properties?.codigo_ibg) === stateIdStr ||
+            String(f.properties?.id) === stateIdStr
         )
 
         if (feature) {
           const bounds = geojsonService.getFeatureBounds(feature)
-          map.fitBounds(bounds, {
-            padding: 50,
-            maxZoom: 6,
-            duration: 1200,
+          const centerLng = (bounds[0][0] + bounds[1][0]) / 2
+          const centerLat = (bounds[0][1] + bounds[1][1]) / 2
+
+          await updateThematicVisualization(false)
+
+          map.easeTo({
+            center: [centerLng, centerLat],
+            zoom: 6.1,
             pitch: dashboardStore.viewMode === '3d' ? 55 : 0,
             bearing: dashboardStore.viewMode === '3d' ? -15 : 0,
+            duration: 1200,
           })
         }
       }
-      updateThematicVisualization()
     }
   }
 )
@@ -869,7 +935,10 @@ watch(
 <template>
   <div
     class="relative w-full h-full min-h-[400px] flex-grow rounded-2xl overflow-hidden border border-slate-800/80 bg-slate-950 shadow-2xl"
-    :class="{ 'sidebar-open-mobile': dashboardStore.selectedMunicipio !== null || dashboardStore.selectedEstado !== null }"
+    :class="{
+      'sidebar-open-mobile':
+        dashboardStore.selectedMunicipio !== null || dashboardStore.selectedEstado !== null,
+    }"
   >
     <!-- Target Container for Mapbox -->
     <div ref="mapContainer" class="w-full h-full absolute inset-0"></div>
