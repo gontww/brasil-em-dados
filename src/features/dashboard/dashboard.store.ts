@@ -20,6 +20,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     selectedMunicipio.value = municipio
     if (municipio) {
       selectedEstado.value = null
+      mapLevel.value = 'municipios'
     }
     sidebarOpen.value = municipio !== null || selectedEstado.value !== null
   }
@@ -28,6 +29,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
     selectedEstado.value = estado
     if (estado) {
       selectedMunicipio.value = null
+      mapLevel.value = 'estados'
     }
     sidebarOpen.value = estado !== null || selectedMunicipio.value !== null
   }

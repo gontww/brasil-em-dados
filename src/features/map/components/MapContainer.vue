@@ -115,8 +115,8 @@ onMounted(() => {
     initializeMap(mapContainer.value, {
       center: [-51.9253, -14.235], // Centro do Brasil
       zoom: 3.8,
-      minZoom: 3.5,
-      maxZoom: 5.95,
+      minZoom: 3.0,
+      maxZoom: 16.0,
     })
   }
 })
@@ -127,10 +127,15 @@ const setupStatesLayers = (map: mapboxgl.Map, geojsonData: FeatureCollection) =>
     feat.id = Number(feat.properties?.codigo_ibg || feat.properties?.id)
   })
 
-  map.addSource('brazil-states', {
-    type: 'geojson',
-    data: geojsonData,
-  })
+  if (!map.getSource('brazil-states')) {
+    map.addSource('brazil-states', {
+      type: 'geojson',
+      data: geojsonData,
+      maxzoom: 7,
+      tolerance: 0.375,
+      buffer: 64,
+    })
+  }
 
   // Camada de preenchimento (cor base neutra)
   map.addLayer({
@@ -311,14 +316,21 @@ watch(isLoaded, async (loaded) => {
 
           if (feature) {
             const bounds = geojsonService.getFeatureBounds(feature)
-            const centerLng = (bounds[0][0] + bounds[1][0]) / 2
-            const centerLat = (bounds[0][1] + bounds[1][1]) / 2
+            const camera = map.cameraForBounds(bounds, {
+              padding: { top: 60, bottom: 60, left: 60, right: 60 },
+              maxZoom: 7.0,
+            })
+            const center = camera?.center || [
+              (bounds[0][0] + bounds[1][0]) / 2,
+              (bounds[0][1] + bounds[1][1]) / 2,
+            ]
+            const targetZoom = camera?.zoom || 5.5
 
             await updateThematicVisualization(false)
 
             map.easeTo({
-              center: [centerLng, centerLat],
-              zoom: 6.1,
+              center,
+              zoom: targetZoom,
               pitch: dashboardStore.viewMode === '3d' ? 55 : 0,
               bearing: dashboardStore.viewMode === '3d' ? -15 : 0,
               duration: 1200,
@@ -379,6 +391,7 @@ const setupMunicipiosEvents = (map: mapboxgl.Map) => {
 
   // Usar eventos no nível do mapa para controlar qual camada é consultada
   map.on('mousemove', (e) => {
+    if (dashboardStore.mapLevel !== 'municipios') return
     if (!map.getLayer('municipios-fill') && !map.getLayer('municipios-hit')) return
 
     const hitLayer = getHitTestLayer()
@@ -393,6 +406,7 @@ const setupMunicipiosEvents = (map: mapboxgl.Map) => {
   })
 
   map.on('click', (e) => {
+    if (dashboardStore.mapLevel !== 'municipios') return
     if (!map.getLayer('municipios-fill') && !map.getLayer('municipios-hit')) return
 
     const hitLayer = getHitTestLayer()
@@ -413,13 +427,13 @@ const ensureMunicipiosSource = (map: mapboxgl.Map, geojsonData: FeatureCollectio
 
   municipioGeoJson.value = geojsonData
 
-  if (source) {
-    source.setData(geojsonData)
-  } else {
+  if (!source) {
     map.addSource('municipios-source', {
       type: 'geojson',
       data: geojsonData,
-      maxzoom: 5,
+      maxzoom: 9,
+      tolerance: 0.375,
+      buffer: 64,
     })
 
     // Preenchimento dos municípios
@@ -529,6 +543,7 @@ const applyThematicStyling = (
 
     // Garantir que a camada 2D fique visível se resetado
     safeSetLayoutProperty(map, fillLayerId, 'visibility', 'visible')
+    lastAppliedIndicator.value[sourceId] = 'none'
     return
   }
 
@@ -743,10 +758,12 @@ const handleDeselectMunicipio = async (map: mapboxgl.Map) => {
     safeSetLayoutProperty(map, 'states-borders', 'visibility', 'visible')
   }
 
-  map.flyTo({
+  map.easeTo({
     center: [-51.9253, -14.235],
-    zoom: 6.1,
-    duration: 1500,
+    zoom: 3.8,
+    pitch: dashboardStore.viewMode === '3d' ? 55 : 0,
+    bearing: dashboardStore.viewMode === '3d' ? -15 : 0,
+    duration: 1200,
   })
 
   // Atualizar visualização temática nacional se houver um tema ativo
@@ -756,7 +773,7 @@ const handleDeselectMunicipio = async (map: mapboxgl.Map) => {
 const handleSelectMunicipio = async (map: mapboxgl.Map, newMunicipio: Municipio) => {
   // Garantir que o nível do mapa está em 'municipios' ao selecionar um município
   if (dashboardStore.mapLevel !== 'municipios') {
-    dashboardStore.setMapLevel('municipios')
+    dashboardStore.mapLevel = 'municipios'
   }
 
   isGeoJsonLoading.value = true
@@ -765,6 +782,8 @@ const handleSelectMunicipio = async (map: mapboxgl.Map, newMunicipio: Municipio)
     // Ocultar preenchimento dos estados para focar nos municípios
     safeSetLayoutProperty(map, 'states-fill', 'visibility', 'none')
     safeSetLayoutProperty(map, 'states-borders', 'visibility', 'none')
+    safeSetLayoutProperty(map, 'states-extrusion', 'visibility', 'none')
+    safeSetLayoutProperty(map, 'states-hit', 'visibility', 'none')
 
     // Sempre carregar o GeoJSON nacional completo (loadNationalMunicipalities tem cache interno)
     // Isso garante que todos os municípios sejam exibidos, independente do nível anterior
@@ -795,13 +814,19 @@ const handleSelectMunicipio = async (map: mapboxgl.Map, newMunicipio: Municipio)
 
       if (feature) {
         const bounds = geojsonService.getFeatureBounds(feature)
-        // Calcular o centro do município a partir dos bounds
-        const centerLng = (bounds[0][0] + bounds[1][0]) / 2
-        const centerLat = (bounds[0][1] + bounds[1][1]) / 2
-        // easeTo anima linearmente sem o zoom-out intermediário do flyTo
+        const camera = map.cameraForBounds(bounds, {
+          padding: { top: 70, bottom: 70, left: 70, right: 70 },
+          maxZoom: 10.5,
+        })
+        const center = camera?.center || [
+          (bounds[0][0] + bounds[1][0]) / 2,
+          (bounds[0][1] + bounds[1][1]) / 2,
+        ]
+        const targetZoom = camera?.zoom || 8.0
+
         map.easeTo({
-          center: [centerLng, centerLat],
-          zoom: 6.1,
+          center,
+          zoom: targetZoom,
           pitch: is3D ? 55 : 0,
           bearing: is3D ? -15 : 0,
           duration: 1200,
@@ -870,14 +895,21 @@ watch(
 
         if (feature) {
           const bounds = geojsonService.getFeatureBounds(feature)
-          const centerLng = (bounds[0][0] + bounds[1][0]) / 2
-          const centerLat = (bounds[0][1] + bounds[1][1]) / 2
+          const camera = map.cameraForBounds(bounds, {
+            padding: { top: 60, bottom: 60, left: 60, right: 60 },
+            maxZoom: 7.0,
+          })
+          const center = camera?.center || [
+            (bounds[0][0] + bounds[1][0]) / 2,
+            (bounds[0][1] + bounds[1][1]) / 2,
+          ]
+          const targetZoom = camera?.zoom || 5.5
 
           await updateThematicVisualization(false)
 
           map.easeTo({
-            center: [centerLng, centerLat],
-            zoom: 6.1,
+            center,
+            zoom: targetZoom,
             pitch: dashboardStore.viewMode === '3d' ? 55 : 0,
             bearing: dashboardStore.viewMode === '3d' ? -15 : 0,
             duration: 1200,
@@ -904,12 +936,17 @@ watch(
     if (newLevel === 'municipios' && dashboardStore.selectedEstado) {
       dashboardStore.selectEstado(null)
     }
+    
+    if (newLevel === 'municipios' && dashboardStore.selectedMunicipio) {
+      return
+    }
 
     if (newLevel === 'municipios') {
       // Ocultar estados
       safeSetLayoutProperty(map, 'states-fill', 'visibility', 'none')
       safeSetLayoutProperty(map, 'states-borders', 'visibility', 'none')
       safeSetLayoutProperty(map, 'states-extrusion', 'visibility', 'none')
+      safeSetLayoutProperty(map, 'states-hit', 'visibility', 'none')
 
       // Carregar e exibir municípios nacionais
       await loadNationalMunicipalities(map)
